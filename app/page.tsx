@@ -411,11 +411,11 @@ export default function Home() {
           >
             <div>
               <p className="rb-sheet-kicker" style={{ marginBottom: 4 }}>
-                Reality Browser
+                AURA
               </p>
               <strong style={{ fontSize: "1rem" }}>
                 {shellViewState === "landing"
-                  ? "Mobile scanner shell"
+                  ? "Augmented Universal Recognition Assistant"
                   : displayAnalyzing
                     ? "Analyzing live scene"
                     : detailModel?.heroTitle ?? "Ready to scan"}
@@ -459,21 +459,6 @@ export default function Home() {
             <div style={{ display: "grid", gap: 12, pointerEvents: "auto" }}>
               <ActionBar
                 onScan={handleManualScan}
-                onAskAI={async () => {
-                  if (isConnected) {
-                    disconnect();
-                    return;
-                  }
-
-                  await connect();
-                  lastCallRef.current = 0;
-                  runAnalysis();
-                }}
-                onToggleSave={() => {}}
-                onCompare={() => {}}
-                canAskAI={Boolean(displayData)}
-                canCompare={false}
-                isSaved={false}
                 isScanning={displayAnalyzing}
               />
 
@@ -511,23 +496,26 @@ export default function Home() {
 
       <button
         onClick={toggleDemoMode}
+        className="rb-mode-badge"
         style={{
           position: "fixed",
-          bottom: "env(safe-area-inset-bottom, 16px)",
+          bottom: "max(16px, env(safe-area-inset-bottom, 16px))",
           left: 16,
           zIndex: 30,
-          padding: "6px 10px",
-          border: `1px solid ${isDemoMode ? "#ff334444" : "rgba(255,255,255,0.15)"}`,
-          borderRadius: 16,
-          background: isDemoMode ? "rgba(255,51,68,0.15)" : "rgba(0,0,0,0.4)",
-          color: isDemoMode ? "#ff3344" : "rgba(255,255,255,0.4)",
-          fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
-          fontSize: "0.55rem",
-          letterSpacing: "0.08em",
+          padding: "6px 14px",
+          minHeight: 32,
+          background: isDemoMode
+            ? "linear-gradient(180deg, rgba(246,83,20,0.3), rgba(24,10,10,0.8))"
+            : "rgba(8, 14, 24, 0.7)",
+          borderColor: isDemoMode
+            ? "rgba(246,83,20,0.4)"
+            : "rgba(179, 248, 255, 0.16)",
+          color: isDemoMode ? "#ff8d64" : "rgba(255,243,237,0.5)",
           cursor: "pointer",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
           pointerEvents: "auto",
+          boxShadow: isDemoMode ? "0 0 12px rgba(246,83,20,0.2)" : "none",
         }}
       >
         {isDemoMode ? "● DEMO" : "DEMO"}

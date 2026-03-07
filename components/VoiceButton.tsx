@@ -10,44 +10,35 @@ interface VoiceButtonProps {
 
 const STATE_CONFIG: Record<
   ConnectionState,
-  { label: string; color: string; bg: string; pulse: boolean }
+  { label: string; accent: string; pulse: boolean }
 > = {
   DISCONNECTED: {
-    label: 'TAP TO TALK',
-    color: '#00f0ff',
-    bg: 'rgba(0,240,255,0.15)',
+    label: 'Voice',
+    accent: 'rgba(179, 248, 255, 0.7)',
     pulse: false,
   },
   CONNECTING: {
-    label: 'CONNECTING...',
-    color: '#ffaa00',
-    bg: 'rgba(255,170,0,0.15)',
+    label: 'Connecting',
+    accent: '#ffb79d',
     pulse: true,
   },
   CONNECTED: {
-    label: 'LISTENING',
-    color: '#00ff88',
-    bg: 'rgba(0,255,136,0.15)',
+    label: 'Listening',
+    accent: '#00ff88',
     pulse: true,
   },
   LISTENING: {
-    label: 'LISTENING',
-    color: '#00ff88',
-    bg: 'rgba(0,255,136,0.2)',
+    label: 'Listening',
+    accent: '#00ff88',
     pulse: true,
   },
   SPEAKING: {
-    label: 'AI SPEAKING',
-    color: '#a855f7',
-    bg: 'rgba(168,85,247,0.2)',
+    label: 'AI Speaking',
+    accent: '#c084fc',
     pulse: true,
   },
 };
 
-/**
- * Floating microphone button — top-right of screen.
- * Tap to connect/disconnect voice session.
- */
 export default function VoiceButton({
   connectionState,
   onConnect,
@@ -59,39 +50,40 @@ export default function VoiceButton({
   return (
     <button
       onClick={isActive ? onDisconnect : onConnect}
+      className="rb-mode-badge"
       style={{
         position: 'fixed',
-        top: 56,
+        top: 'max(16px, env(safe-area-inset-top, 16px))',
         right: 16,
         zIndex: 30,
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '8px 14px',
-        border: `1px solid ${config.color}44`,
-        borderRadius: 24,
-        background: config.bg,
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
-        color: config.color,
-        fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
-        fontSize: '0.6rem',
-        letterSpacing: '0.08em',
+        gap: 8,
+        padding: '6px 14px',
+        minHeight: 32,
+        background: isActive
+          ? 'linear-gradient(180deg, rgba(8, 14, 24, 0.85), rgba(8, 14, 24, 0.95))'
+          : 'rgba(8, 14, 24, 0.7)',
+        borderColor: isActive
+          ? `${config.accent}44`
+          : 'rgba(179, 248, 255, 0.16)',
+        color: isActive ? config.accent : 'rgba(255,243,237,0.6)',
         cursor: 'pointer',
-        transition: 'all 0.2s ease',
+        backdropFilter: 'blur(14px)',
+        WebkitBackdropFilter: 'blur(14px)',
         pointerEvents: 'auto',
-        boxShadow: isActive ? `0 0 12px ${config.color}33` : 'none',
+        transition: 'all 0.2s ease',
+        boxShadow: isActive ? `0 0 12px ${config.accent}22` : 'none',
       }}
     >
-      {/* Mic icon / indicator */}
       <span
         style={{
           display: 'inline-block',
-          width: 8,
-          height: 8,
+          width: 7,
+          height: 7,
           borderRadius: '50%',
-          background: config.color,
-          boxShadow: `0 0 6px ${config.color}`,
+          background: config.accent,
+          boxShadow: isActive ? `0 0 6px ${config.accent}` : 'none',
           animation: config.pulse ? 'pulse 1.5s ease-in-out infinite' : 'none',
         }}
       />

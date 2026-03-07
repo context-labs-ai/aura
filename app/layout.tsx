@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
-  title: "Reality Browser",
-  description: "See the world through AI-enhanced reality",
+  title: "AURA — Augmented Universal Recognition Assistant",
+  description: "AI-powered augmented reality assistant for buildings and products",
   manifest: "/manifest.json",
 };
 
