@@ -32,6 +32,7 @@ interface Building3DOverlayProps {
   buildingDetails: BuildingDetails | null;
   buildingName: string;
   onClose: () => void;
+  floors?: number;
 }
 
 /**
@@ -44,6 +45,7 @@ export default function Building3DOverlay({
   buildingDetails,
   buildingName,
   onClose,
+  floors,
 }: Building3DOverlayProps) {
   const [viewerSize, setViewerSize] = useState({ width: 350, height: 280 });
 
@@ -142,6 +144,7 @@ export default function Building3DOverlay({
           glbUrl={glbUrl}
           width={viewerSize.width}
           height={viewerSize.height}
+          floors={floors}
         />
       </div>
 

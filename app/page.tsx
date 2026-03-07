@@ -285,31 +285,24 @@ export default function Home() {
     const buildingName = displayData?.title;
     if (!frame || !buildingName) return;
 
-    setIsScanning3D(true);
+    // 1. Immediately show procedural wireframe (instant Iron Man scan)
+    setModel3DUrl('procedural');
     setBuildingDetails(null);
-    try {
-      // Check for pre-baked model (Marina Bay Sands)
-      const isMBS = buildingName.toLowerCase().includes('marina bay sands');
+    setIsScanning3D(false);
 
-      // Run 3D generation and building details in parallel
-      const [glbUrl, details] = await Promise.all([
-        isMBS ? Promise.resolve('/models/mbs.glb') : generate3DModel(frame).catch(() => null),
-        fetchBuildingDetails(buildingName).catch(() => null),
-      ]);
+    // 2. Fetch building details in background (fast, ~2s)
+    fetchBuildingDetails(buildingName)
+      .then((details) => { if (details) setBuildingDetails(details); })
+      .catch(() => { /* non-critical */ });
 
-      if (glbUrl) {
-        setModel3DUrl(glbUrl);
-      } else {
-        // Fallback: use generic building model so overlay still opens
-        setModel3DUrl('/models/mbs.glb');
-      }
-      if (details) {
-        setBuildingDetails(details);
-      }
-    } catch (err) {
-      console.error('[3d-scan]', err);
-    } finally {
-      setIsScanning3D(false);
+    // 3. Start 3D model generation in background (slow, 3-5min)
+    const isMBS = buildingName.toLowerCase().includes('marina bay sands');
+    if (isMBS) {
+      setModel3DUrl('/models/mbs.glb');
+    } else {
+      generate3DModel(frame)
+        .then((url) => { if (url) setModel3DUrl(url); })
+        .catch(() => { /* keep procedural wireframe as fallback */ });
     }
   }, [displayData?.title]);
 
@@ -423,6 +416,7 @@ export default function Home() {
           glbUrl={model3DUrl}
           buildingDetails={buildingDetails}
           buildingName={displayData?.title ?? 'Building'}
+          floors={buildingDetails?.floors}
           onClose={() => {
             setModel3DUrl(null);
             setBuildingDetails(null);
