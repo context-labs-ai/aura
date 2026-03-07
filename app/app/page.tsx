@@ -5,6 +5,7 @@ import "@/styles/hud.css";
 import CameraFeed, { CameraFeedHandle } from "@/components/CameraFeed";
 import ActionBar from "@/components/ActionBar";
 import InsightBottomSheet from "@/components/InsightBottomSheet";
+import LandingHero from "@/components/LandingHero";
 import ModeSwitcher from "@/components/ModeSwitcher";
 import ScanReticle from "@/components/ScanReticle";
 import VoiceButton from "@/components/VoiceButton";
@@ -334,6 +335,7 @@ export default function Home() {
       <CameraFeed ref={cameraRef} />
 
       <div
+        className={`rb-app-shell rb-app-shell--${shellViewState}`}
         style={{
           position: "fixed",
           inset: 0,
@@ -396,50 +398,13 @@ export default function Home() {
         </div>
 
         {shellViewState === "landing" ? (
-          <div
-            style={{
-              position: "relative",
-              zIndex: 1,
-              pointerEvents: "auto",
-              display: "grid",
-              gap: 18,
-              alignSelf: "stretch",
-              marginTop: "auto",
-              paddingBottom: "max(24px, env(safe-area-inset-bottom, 24px))",
+          <LandingHero
+            onStart={() => {
+              setShellStarted(true);
+              lastCallRef.current = 0;
+              void runAnalysis();
             }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                padding: "20px",
-                borderRadius: 28,
-                background: "rgba(12, 4, 4, 0.72)",
-                border: "1px solid rgba(246, 83, 20, 0.22)",
-                boxShadow: "0 24px 48px rgba(0,0,0,0.32)",
-              }}
-            >
-              <p className="rb-sheet-kicker">Shell transplant preview</p>
-              <h1 style={{ margin: 0, fontSize: "2rem", lineHeight: 1.05 }}>
-                Swap the old HUD for a mobile-first scanner.
-              </h1>
-              <p style={{ margin: 0, color: "rgba(255,243,237,0.74)", lineHeight: 1.6 }}>
-                The live Gemini and Places pipeline stays intact. This screen routes you into the
-                new landing, scan, and details flow.
-              </p>
-              <button
-                onClick={() => {
-                  setShellStarted(true);
-                  lastCallRef.current = 0;
-                  void runAnalysis();
-                }}
-                className="rb-action-bar__primary"
-                style={{ minHeight: 56 }}
-              >
-                Start Scan
-              </button>
-            </div>
-          </div>
+          />
         ) : (
           <div
             style={{
