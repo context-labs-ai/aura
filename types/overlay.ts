@@ -27,6 +27,8 @@ export interface BuildingData extends OverlayData {
   historicalSummary?: string;
   futurePlansStatus?: 'confirmed' | 'proposed' | 'rumored' | 'none_found';
   futurePlansSummary?: string;
+  trustLevel?: 'high' | 'medium' | 'low';
+  trustReason?: string;
   neighborhoodSummary?: string;
   buildingDetails?: {
     yearBuilt?: string;

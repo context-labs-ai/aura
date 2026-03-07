@@ -94,6 +94,8 @@ export async function enrichBuildingData(
       buildingBase.historicalSummary = grounded.buildingDetails.historicalSummary;
       buildingBase.futurePlansStatus = grounded.buildingDetails.futurePlansStatus;
       buildingBase.futurePlansSummary = grounded.buildingDetails.futurePlansSummary;
+      buildingBase.trustLevel = grounded.buildingDetails.trustLevel;
+      buildingBase.trustReason = grounded.buildingDetails.trustReason;
     }
     groundingSources = grounded.sources;
   }
