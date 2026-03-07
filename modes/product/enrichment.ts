@@ -139,7 +139,11 @@ export async function enrichProductFromBase(
     'alternatives',
   ].join(' ');
 
-  const grounding = await enrichWithGrounding(groundingQuery, 'product');
+  const grounding = await enrichWithGrounding({
+    query: groundingQuery,
+    mode: 'product',
+    user: getUserContext(),
+  });
 
   const enriched: ProductData = {
     ...baseData,

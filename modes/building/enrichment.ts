@@ -227,7 +227,17 @@ export async function enrichBuildingFromBase(
   const groundingQuery = `${baseData.title} ${baseData.subtitle}`.trim();
   const [grounded, places] = await Promise.all([
     groundingQuery
-      ? enrichWithGrounding(groundingQuery, 'building')
+      ? enrichWithGrounding({
+          query: groundingQuery,
+          mode: 'building',
+          user: getUserContext(),
+          ...(lat !== null && lng !== null ? { location: { coordinates: { lat, lng } } } : {}),
+          visualContext: {
+            title: baseData.title,
+            subtitle: baseData.subtitle,
+            confidence: baseData.confidence,
+          },
+        })
       : Promise.resolve<Awaited<ReturnType<typeof enrichWithGrounding>> | null>(null),
     lat !== null && lng !== null
       ? searchNearbyPlaces(lat, lng, baseData.title)
