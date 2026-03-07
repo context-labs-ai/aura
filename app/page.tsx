@@ -635,29 +635,6 @@ export default function Home() {
 
       {view === "details" && selectedRecord && (
         <section className="rb-details-page">
-          <header className="rb-details-header">
-            <div className="rb-details-thumb-wrap">
-              {frozenFrame ? (
-                <img src={frozenFrame} alt="Captured detail" className="rb-details-thumb" />
-              ) : (
-                <div className="rb-details-thumb rb-details-thumb--placeholder" />
-              )}
-            </div>
-
-            <div className="rb-persona-cluster">
-              {(Object.keys(PERSONA_META) as Persona[]).map((entry) => (
-                <button
-                  key={entry}
-                  className={`rb-persona-chip ${persona === entry ? "rb-persona-chip--active" : ""}`}
-                  onClick={() => setPersona(entry)}
-                >
-                  <span>{PERSONA_META[entry].label}</span>
-                  <small>{PERSONA_META[entry].detail}</small>
-                </button>
-              ))}
-            </div>
-          </header>
-
           <section className="rb-details-sheet">
             <div className="rb-details-sheet__header">
               <div>
@@ -711,6 +688,18 @@ export default function Home() {
               )}
               {saveNotice && <p className="rb-export-panel__notice">{saveNotice}</p>}
             </article>
+            <div className="rb-persona-cluster rb-persona-cluster--bottom">
+              {(Object.keys(PERSONA_META) as Persona[]).map((entry) => (
+                <button
+                  key={entry}
+                  className={`rb-persona-chip ${persona === entry ? "rb-persona-chip--active" : ""}`}
+                  onClick={() => setPersona(entry)}
+                >
+                  <span>{PERSONA_META[entry].label}</span>
+                  <small>{PERSONA_META[entry].detail}</small>
+                </button>
+              ))}
+            </div>
 
             <div className="rb-details-actions">
               <button className="rb-secondary-button" onClick={retake}>Retake</button>
@@ -722,5 +711,7 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
