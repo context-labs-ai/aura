@@ -1,23 +1,41 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
+import "@/styles/hud.css";
 import CameraFeed, { CameraFeedHandle } from "@/components/CameraFeed";
-import HUDOverlay from "@/components/HUD/HUDOverlay";
-import ModeSwitch from "@/components/ModeSwitch";
+import ActionBar from "@/components/ActionBar";
+import InsightBottomSheet from "@/components/InsightBottomSheet";
+import LandingHero from "@/components/LandingHero";
+import ModeSwitcher from "@/components/ModeSwitcher";
+import ScanReticle from "@/components/ScanReticle";
 import VoiceButton from "@/components/VoiceButton";
 import { useMode } from "@/hooks/useMode";
 import { useLiveVoice } from "@/hooks/useLiveVoice";
 import { useLocation } from "@/hooks/useLocation";
 import { useDemoMode } from "@/hooks/useDemoMode";
 import { analyzeFrame } from "@/lib/gemini";
-import { buildBuildingVoiceSummary, getBaseBuildingAnalysis, enrichBuildingFromBase } from "@/modes/building/enrichment";
-import { buildProductVoiceSummary, getBaseProductAnalysis, enrichProductFromBase } from "@/modes/product/enrichment";
+import {
+  buildBuildingVoiceSummary,
+  getBaseBuildingAnalysis,
+  enrichBuildingFromBase,
+} from "@/modes/building/enrichment";
+import {
+  buildProductVoiceSummary,
+  getBaseProductAnalysis,
+  enrichProductFromBase,
+} from "@/modes/product/enrichment";
 import type { OverlayData, BuildingData, ProductData } from "@/types/overlay";
 import { generateDecomposition, type DecompositionResult } from "@/lib/image-gen";
 import DecompositionImage from "@/components/HUD/DecompositionImage";
-import { generate3DModel } from '@/lib/3d-gen';
-import { fetchBuildingDetails, type BuildingDetails } from '@/lib/building-details';
-import Building3DOverlay from '@/components/HUD/Building3DOverlay';
+import { generate3DModel } from "@/lib/3d-gen";
+import { fetchBuildingDetails, type BuildingDetails } from "@/lib/building-details";
+import Building3DOverlay from "@/components/HUD/Building3DOverlay";
+import {
+  buildBuildingShellModel,
+  buildProductShellModel,
+  getShellViewState,
+  type ShellPersona,
+} from "@/lib/ui-shell";
 
 const ANALYSIS_COOLDOWN_MS = 2_000;
 const ENRICHMENT_CACHE_MAX = 20;
@@ -42,9 +60,8 @@ function getEnrichmentCacheKey(
   }
 
   if (mode === "building") {
-    const locationKey = lat !== null && lng !== null
-      ? `${lat.toFixed(3)}:${lng.toFixed(3)}`
-      : "no-location";
+    const locationKey =
+      lat !== null && lng !== null ? `${lat.toFixed(3)}:${lng.toFixed(3)}` : "no-location";
     return `${mode}:${title}:${locationKey}`;
   }
 
@@ -56,13 +73,19 @@ function getEnrichmentCacheKey(
 export default function Home() {
   const cameraRef = useRef<CameraFeedHandle>(null!);
 
-  // ── Hooks ────────────────────────────────────────────────────
   const { activeMode, selection, isAutoDetect, setSelection, updateFromAnalysis } = useMode();
-  const { connectionState, connect, disconnect, updateContext, onAnalysisRequested } = useLiveVoice();
+  const { connectionState, isConnected, connect, disconnect, updateContext, onAnalysisRequested } =
+    useLiveVoice();
   const { lat, lng } = useLocation();
-  const { isDemoMode, toggleDemoMode, demoData, isDemoAnalyzing, simulateAnalysis, speakDemoScript } = useDemoMode();
+  const {
+    isDemoMode,
+    toggleDemoMode,
+    demoData,
+    isDemoAnalyzing,
+    simulateAnalysis,
+    speakDemoScript,
+  } = useDemoMode();
 
-  // ── Analysis state ───────────────────────────────────────────
   const [data, setData] = useState<OverlayData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const analyzingRef = useRef(false);
@@ -71,18 +94,16 @@ export default function Home() {
   const enrichmentCacheRef = useRef<Map<string, OverlayData>>(new Map());
   const pendingEnrichmentRef = useRef<Map<string, Promise<OverlayData>>>(new Map());
 
-  // ── Decomposition state ─────────────────────────────────────────────
   const [isDecomposing, setIsDecomposing] = useState(false);
   const [decomposition, setDecomposition] = useState<DecompositionResult | null>(null);
 
-  // ── 3D scan state ─────────────────────────────────────────────────
   const [isScanning3D, setIsScanning3D] = useState(false);
   const [model3DUrl, setModel3DUrl] = useState<string | null>(null);
   const [buildingDetails, setBuildingDetails] = useState<BuildingDetails | null>(null);
+  const [shellStarted, setShellStarted] = useState(false);
+  const [activePersona, setActivePersona] = useState<ShellPersona["id"]>("explore");
 
-  // ── Core analysis pipeline ───────────────────────────────────
   const runAnalysis = useCallback(async () => {
-    // Cooldown guard — prevent rapid re-triggers
     const now = Date.now();
     if (now - lastCallRef.current < ANALYSIS_COOLDOWN_MS) return;
     if (analyzingRef.current) return;
@@ -94,36 +115,31 @@ export default function Home() {
     lastCallRef.current = now;
     setIsAnalyzing(true);
 
-    // Stale-result protection: each request gets a unique ID
     const thisRequestId = ++requestIdRef.current;
 
     try {
-      // ── Step 1: Scene classification in auto mode ─────────────
       let effectiveMode: "building" | "product" = activeMode === "product" ? "product" : "building";
       if (isAutoDetect) {
-        const classification = await analyzeFrame(frame, 'unknown');
+        const classification = await analyzeFrame(frame, "unknown");
         if (requestIdRef.current !== thisRequestId) return;
+
         if (
           classification.confidence >= AUTO_MODE_CONFIDENCE_THRESHOLD &&
-          classification.mode === 'building'
+          classification.mode === "building"
         ) {
-          effectiveMode = 'building';
-        } else if (
-          classification.confidence >= 0.7 &&
-          classification.mode === 'product'
-        ) {
-          // Product mode requires HIGHER confidence to avoid misclassifying landmarks
-          effectiveMode = 'product';
+          effectiveMode = "building";
+        } else if (classification.confidence >= 0.7 && classification.mode === "product") {
+          // Product mode requires a higher threshold to avoid landmark misclassification.
+          effectiveMode = "product";
         }
-        // Default stays 'building' — safer for landmarks, monuments, statues
+
         updateFromAnalysis(classification);
       }
 
-      // ── Step 2: Fast base analysis (display immediately) ──────
       let baseResult: OverlayData;
       let voiceSummary: string | undefined;
 
-      if (effectiveMode === 'building') {
+      if (effectiveMode === "building") {
         const base = await getBaseBuildingAnalysis(frame);
         baseResult = base.data;
         voiceSummary = base.voiceSummary;
@@ -136,7 +152,6 @@ export default function Home() {
       setData(baseResult);
       if (voiceSummary) updateContext(voiceSummary);
 
-      // ── Step 3: Check enrichment cache ────────────────────────
       const cacheKey = getEnrichmentCacheKey(effectiveMode, baseResult, lat, lng);
       const cached = cacheKey ? enrichmentCacheRef.current.get(cacheKey) : undefined;
       if (cached) {
@@ -144,20 +159,19 @@ export default function Home() {
         return;
       }
 
-      // ── Step 4: Async enrichment (non-blocking) ───────────────
       const enrichMode = effectiveMode;
       const enrichBase = baseResult;
       void (async () => {
         try {
-          let enrichmentPromise = cacheKey
-            ? pendingEnrichmentRef.current.get(cacheKey)
-            : undefined;
+          let enrichmentPromise = cacheKey ? pendingEnrichmentRef.current.get(cacheKey) : undefined;
 
           if (!enrichmentPromise) {
             enrichmentPromise = (async () => {
-              if (enrichMode === 'building') {
+              if (enrichMode === "building") {
                 const enriched = await enrichBuildingFromBase(
-                  enrichBase as BuildingData, lat, lng,
+                  enrichBase as BuildingData,
+                  lat,
+                  lng,
                 );
                 return enriched.data;
               }
@@ -179,18 +193,16 @@ export default function Home() {
           const enrichedResult = await enrichmentPromise;
 
           if (requestIdRef.current === thisRequestId) {
-            if (enrichMode === 'building') {
+            if (enrichMode === "building") {
               updateContext(buildBuildingVoiceSummary(enrichedResult as BuildingData));
             } else {
               updateContext(buildProductVoiceSummary(enrichedResult as ProductData));
             }
           }
 
-          // Stale guard: only apply if this is still the latest request
           if (requestIdRef.current !== thisRequestId) return;
           setData(enrichedResult);
 
-          // Cache enriched result (evict oldest if full)
           if (cacheKey) {
             if (enrichmentCacheRef.current.size >= ENRICHMENT_CACHE_MAX) {
               const firstKey = enrichmentCacheRef.current.keys().next().value;
@@ -199,19 +211,25 @@ export default function Home() {
             enrichmentCacheRef.current.set(cacheKey, enrichedResult);
           }
 
-          // ── Step 5: Fetch building details (year, architect, height, etc.) ──
-          if (enrichMode === 'building' && enrichedResult.title) {
-            fetchBuildingDetails(enrichedResult.title).then((details) => {
-              if (details && requestIdRef.current === thisRequestId) {
+          if (enrichMode === "building" && enrichedResult.title) {
+            fetchBuildingDetails(enrichedResult.title)
+              .then((details) => {
+                if (!details || requestIdRef.current !== thisRequestId) return;
+
                 setData((prev) => {
-                  if (!prev || prev.mode !== 'building') return prev;
-                  return { ...prev, buildingDetails: details } as BuildingData;
+                  if (!prev || prev.mode !== "building") return prev;
+                  return {
+                    ...prev,
+                    buildingDetails: details,
+                  } as BuildingData;
                 });
-              }
-            }).catch(() => { /* non-critical */ });
+              })
+              .catch(() => {
+                // Non-critical enrichment; ignore fetch failure.
+              });
           }
         } catch (err) {
-          console.error('[enrichment]', err);
+          console.error("[enrichment]", err);
         }
       })();
     } catch (err) {
@@ -222,24 +240,25 @@ export default function Home() {
     }
   }, [activeMode, isAutoDetect, lat, lng, updateContext, updateFromAnalysis]);
 
-  // ── Voice-triggered analysis ──────────────────────────────────
   useEffect(() => {
     onAnalysisRequested.current = () => {
       lastCallRef.current = 0;
       runAnalysis();
     };
-    return () => { onAnalysisRequested.current = null; };
+
+    return () => {
+      onAnalysisRequested.current = null;
+    };
   }, [runAnalysis, onAnalysisRequested]);
 
-  // ── Clear data when mode changes ────────────────────────────
   useEffect(() => {
     setData(null);
     lastCallRef.current = 0;
     enrichmentCacheRef.current.clear();
     pendingEnrichmentRef.current.clear();
+    setActivePersona("explore");
   }, [activeMode]);
 
-  // ── Demo mode: override data with demo data ─────────────────
   useEffect(() => {
     if (isDemoMode && !demoData && !isDemoAnalyzing) {
       simulateAnalysis(activeMode);
@@ -249,18 +268,21 @@ export default function Home() {
   const displayData = isDemoMode ? demoData : data;
   const displayAnalyzing = isDemoMode ? isDemoAnalyzing : isAnalyzing;
 
-  // ── Manual trigger (tap the HUD crosshair area) ─────────────
   const handleManualScan = useCallback(() => {
+    if (!shellStarted) {
+      setShellStarted(true);
+    }
+
     if (isDemoMode) {
       simulateAnalysis(activeMode);
-      speakDemoScript(activeMode as 'building' | 'product');
+      speakDemoScript(activeMode as "building" | "product");
       return;
     }
+
     lastCallRef.current = 0;
     runAnalysis();
-  }, [isDemoMode, activeMode, simulateAnalysis, speakDemoScript, runAnalysis]);
+  }, [shellStarted, isDemoMode, activeMode, simulateAnalysis, speakDemoScript, runAnalysis]);
 
-  // ── Decomposition handler ────────────────────────────────────────────
   const handleDecompose = useCallback(async () => {
     const frame = cameraRef.current?.captureFrame();
     const productTitle = displayData?.title;
@@ -273,135 +295,240 @@ export default function Home() {
         setDecomposition(result);
       }
     } catch (err) {
-      console.error('[decomposition]', err);
+      console.error("[decomposition]", err);
     } finally {
       setIsDecomposing(false);
     }
   }, [displayData?.title]);
 
-  // ── 3D Scan handler ───────────────────────────────────────────────
   const handleScan3D = useCallback(async () => {
     const frame = cameraRef.current?.captureFrame();
     const buildingName = displayData?.title;
     if (!frame || !buildingName) return;
 
-    // 1. Immediately show procedural wireframe (instant Iron Man scan)
-    setModel3DUrl('procedural');
+    setIsScanning3D(true);
+    setModel3DUrl("procedural");
     setBuildingDetails(null);
     setIsScanning3D(false);
 
-    // 2. Fetch building details in background (fast, ~2s)
     fetchBuildingDetails(buildingName)
-      .then((details) => { if (details) setBuildingDetails(details); })
-      .catch(() => { /* non-critical */ });
+      .then((details) => {
+        if (details) {
+          setBuildingDetails(details);
+        }
+      })
+      .catch(() => {
+        // Non-critical background detail fetch.
+      });
 
-    // 3. Start 3D model generation in background (slow, 3-5min)
-    const isMBS = buildingName.toLowerCase().includes('marina bay sands');
+    const isMBS = buildingName.toLowerCase().includes("marina bay sands");
     if (isMBS) {
-      setModel3DUrl('/models/mbs.glb');
-    } else {
-      generate3DModel(frame)
-        .then((url) => { if (url) setModel3DUrl(url); })
-        .catch(() => { /* keep procedural wireframe as fallback */ });
+      setModel3DUrl("/models/mbs.glb");
+      return;
     }
+
+    generate3DModel(frame)
+      .then((url) => {
+        if (url) {
+          setModel3DUrl(url);
+        }
+      })
+      .catch(() => {
+        // Keep the procedural fallback if generation fails.
+      });
   }, [displayData?.title]);
+
+  const shellViewState =
+    shellStarted || isDemoMode
+      ? getShellViewState({
+          hasData: Boolean(displayData),
+          isAnalyzing: displayAnalyzing,
+          hasCapturedFrame: shellStarted || isDemoMode,
+        })
+      : "landing";
+
+  const detailModel =
+    displayData?.mode === "building"
+      ? buildBuildingShellModel(displayData as BuildingData)
+      : displayData?.mode === "product"
+        ? buildProductShellModel(displayData as ProductData)
+        : null;
 
   return (
     <>
       <CameraFeed ref={cameraRef} />
-      <HUDOverlay
-        data={displayData}
-        isAnalyzing={displayAnalyzing}
-        mode={activeMode}
-        onDecompose={displayData?.mode === 'product' ? handleDecompose : undefined}
-        isDecomposing={isDecomposing}
-        onScan3D={displayData?.mode === 'building' ? handleScan3D : undefined}
-        isScanning3D={isScanning3D}
-        onAnalyze={handleManualScan}
-        lat={lat}
-        lng={lng}
-      />
 
-      {/* ANALYZE button — centered bottom */}
-      <button
-        onClick={handleManualScan}
-        disabled={isAnalyzing}
+      <div
+        className={`rb-app-shell rb-app-shell--${shellViewState}`}
         style={{
-          position: 'fixed',
-          bottom: 'calc(env(safe-area-inset-bottom, 16px) + 60px)',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 25,
-          padding: '12px 32px',
-          border: `1px solid ${isAnalyzing ? 'rgba(0,240,255,0.15)' : 'rgba(0,240,255,0.5)'}`,
-          borderRadius: 28,
-          background: isAnalyzing ? 'rgba(0,240,255,0.05)' : 'rgba(0,240,255,0.12)',
-          color: isAnalyzing ? 'rgba(255,255,255,0.4)' : 'var(--hud-cyan, #00f0ff)',
-          fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          letterSpacing: '0.15em',
-          cursor: isAnalyzing ? 'not-allowed' : 'pointer',
-          textTransform: 'uppercase',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: isAnalyzing ? 'none' : '0 0 20px rgba(0,240,255,0.15)',
-          transition: 'all 0.2s ease',
-          pointerEvents: 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
+          position: "fixed",
+          inset: 0,
+          zIndex: 10,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "20px 16px max(16px, env(safe-area-inset-bottom, 16px))",
+          color: "#fff3ed",
+          background:
+            shellViewState === "landing"
+              ? "linear-gradient(180deg, rgba(5, 2, 2, 0.46), rgba(5, 2, 2, 0.8))"
+              : "linear-gradient(180deg, rgba(5, 2, 2, 0.12), rgba(5, 2, 2, 0.32))",
+          pointerEvents: "none",
         }}
       >
-        {isAnalyzing ? (
-          <>
-            <span className="hud-spin" style={{ display: 'inline-block', width: 14, height: 14 }}>◐</span>
-            ANALYZING...
-          </>
+        <div
+          className="rb-static-bg"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 0,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            zIndex: 1,
+            pointerEvents: "auto",
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <ModeSwitcher active={selection} onChange={setSelection} />
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div>
+              <p className="rb-sheet-kicker" style={{ marginBottom: 4 }}>
+                Reality Browser
+              </p>
+              <strong style={{ fontSize: "1rem" }}>
+                {shellViewState === "landing"
+                  ? "Mobile scanner shell"
+                  : displayAnalyzing
+                    ? "Analyzing live scene"
+                    : detailModel?.heroTitle ?? "Ready to scan"}
+              </strong>
+            </div>
+            <div className="rb-mode-badge">
+              {selection === "auto" ? "AUTO" : selection.toUpperCase()}
+            </div>
+          </div>
+        </div>
+
+        {shellViewState === "landing" ? (
+          <LandingHero
+            onStart={() => {
+              setShellStarted(true);
+              lastCallRef.current = 0;
+              void runAnalysis();
+            }}
+          />
         ) : (
-          <>
-            ◉ ANALYZE
-          </>
+          <div
+            style={{
+              position: "relative",
+              zIndex: 1,
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ScanReticle active={displayAnalyzing} />
+            </div>
+
+            <div style={{ display: "grid", gap: 12, pointerEvents: "auto" }}>
+              <ActionBar
+                onScan={handleManualScan}
+                onAskAI={async () => {
+                  if (isConnected) {
+                    disconnect();
+                    return;
+                  }
+
+                  await connect();
+                  lastCallRef.current = 0;
+                  runAnalysis();
+                }}
+                onToggleSave={() => {}}
+                onCompare={() => {}}
+                canAskAI={Boolean(displayData)}
+                canCompare={false}
+                isSaved={false}
+                isScanning={displayAnalyzing}
+              />
+
+              {detailModel ? (
+                <InsightBottomSheet
+                  model={detailModel}
+                  activePersona={activePersona}
+                  onPersonaChange={setActivePersona}
+                />
+              ) : (
+                <div className="rb-insight-sheet" style={{ pointerEvents: "none" }}>
+                  <p className="rb-sheet-kicker">Scan state</p>
+                  <strong>
+                    {displayAnalyzing ? "Reading the scene..." : "Point the camera and tap scan."}
+                  </strong>
+                  <p style={{ margin: 0, color: "rgba(255,243,237,0.72)" }}>
+                    Building and product details will appear here once the live analysis completes.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         )}
-      </button>
+      </div>
 
-      {/* Mode switcher */}
-      <ModeSwitch selection={selection} onSelect={setSelection} />
-
-      {/* Voice button */}
       <VoiceButton
         connectionState={connectionState}
         onConnect={async () => {
           await connect();
+          lastCallRef.current = 0;
+          runAnalysis();
         }}
         onDisconnect={disconnect}
       />
-      {/* Demo mode toggle — bottom-left */}
+
       <button
         onClick={toggleDemoMode}
         style={{
-          position: 'fixed',
-          bottom: 'env(safe-area-inset-bottom, 16px)',
+          position: "fixed",
+          bottom: "env(safe-area-inset-bottom, 16px)",
           left: 16,
           zIndex: 30,
-          padding: '6px 10px',
-          border: `1px solid ${isDemoMode ? '#ff334444' : 'rgba(255,255,255,0.15)'}`,
+          padding: "6px 10px",
+          border: `1px solid ${isDemoMode ? "#ff334444" : "rgba(255,255,255,0.15)"}`,
           borderRadius: 16,
-          background: isDemoMode ? 'rgba(255,51,68,0.15)' : 'rgba(0,0,0,0.4)',
-          color: isDemoMode ? '#ff3344' : 'rgba(255,255,255,0.4)',
+          background: isDemoMode ? "rgba(255,51,68,0.15)" : "rgba(0,0,0,0.4)",
+          color: isDemoMode ? "#ff3344" : "rgba(255,255,255,0.4)",
           fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
-          fontSize: '0.55rem',
-          letterSpacing: '0.08em',
-          cursor: 'pointer',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          pointerEvents: 'auto',
+          fontSize: "0.55rem",
+          letterSpacing: "0.08em",
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          pointerEvents: "auto",
         }}
       >
-        {isDemoMode ? '● DEMO' : 'DEMO'}
+        {isDemoMode ? "● DEMO" : "DEMO"}
       </button>
 
-      {/* Decomposition image overlay */}
       {decomposition && (
         <DecompositionImage
           imageBase64={decomposition.imageBase64}
@@ -410,12 +537,11 @@ export default function Home() {
         />
       )}
 
-      {/* 3D building scan overlay */}
       {model3DUrl && (
         <Building3DOverlay
           glbUrl={model3DUrl}
           buildingDetails={buildingDetails}
-          buildingName={displayData?.title ?? 'Building'}
+          buildingName={displayData?.title ?? "Building"}
           floors={buildingDetails?.floors}
           onClose={() => {
             setModel3DUrl(null);
@@ -424,6 +550,51 @@ export default function Home() {
         />
       )}
 
+      {detailModel?.mode === "product" && detailModel.actions.canDecompose ? (
+        <button
+          onClick={handleDecompose}
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 88,
+            zIndex: 30,
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(107,214,255,0.24)",
+            background: "rgba(10, 18, 24, 0.72)",
+            color: "#dff8ff",
+            fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
+            fontSize: "0.65rem",
+            pointerEvents: "auto",
+          }}
+          disabled={isDecomposing}
+        >
+          {isDecomposing ? "Decomposing..." : "Decompose"}
+        </button>
+      ) : null}
+
+      {detailModel?.mode === "building" && detailModel.actions.canScan3D ? (
+        <button
+          onClick={handleScan3D}
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 88,
+            zIndex: 30,
+            padding: "10px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(246,83,20,0.24)",
+            background: "rgba(24, 10, 10, 0.72)",
+            color: "#fff3ed",
+            fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
+            fontSize: "0.65rem",
+            pointerEvents: "auto",
+          }}
+          disabled={isScanning3D}
+        >
+          {isScanning3D ? "Scanning 3D..." : "3D Scan"}
+        </button>
+      ) : null}
     </>
   );
 }
