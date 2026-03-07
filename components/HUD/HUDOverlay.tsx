@@ -26,9 +26,11 @@ interface HUDOverlayProps {
   mode?: string;
   onDecompose?: () => void;
   isDecomposing?: boolean;
+  onScan3D?: () => void;
+  isScanning3D?: boolean;
 }
 
-export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDecomposing }: HUDOverlayProps) {
+export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDecomposing, onScan3D, isScanning3D }: HUDOverlayProps) {
   const hasData = data !== undefined;
   const modeIcon = data?.mode === "product" ? "📦" : "🏢";
   const modeLabel = data?.mode === "product" ? "PRODUCT X-RAY" : "BUILDING X-RAY";
@@ -94,7 +96,12 @@ export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDec
 
         {/* Case 3: Building data */}
         {hasData && data && isBuildingData(data) && (
-          <BuildingOverlay key={data.timestamp} data={data} />
+          <BuildingOverlay
+            key={data.timestamp}
+            data={data}
+            onScan3D={onScan3D}
+            isScanning3D={isScanning3D}
+          />
         )}
 
         {/* Case 4: Product data */}

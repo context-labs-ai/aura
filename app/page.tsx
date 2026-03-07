@@ -9,19 +9,55 @@ import { useMode } from "@/hooks/useMode";
 import { useLiveVoice } from "@/hooks/useLiveVoice";
 import { useLocation } from "@/hooks/useLocation";
 import { useDemoMode } from "@/hooks/useDemoMode";
-import { enrichBuildingData } from "@/modes/building/enrichment";
-import { enrichProductData } from "@/modes/product/enrichment";
-import type { OverlayData } from "@/types/overlay";
+import { analyzeFrame } from "@/lib/gemini";
+import { buildBuildingVoiceSummary, getBaseBuildingAnalysis, enrichBuildingFromBase } from "@/modes/building/enrichment";
+import { buildProductVoiceSummary, getBaseProductAnalysis, enrichProductFromBase } from "@/modes/product/enrichment";
+import type { OverlayData, BuildingData, ProductData } from "@/types/overlay";
 import { generateDecomposition, type DecompositionResult } from "@/lib/image-gen";
 import DecompositionImage from "@/components/HUD/DecompositionImage";
+import { generate3DModel } from '@/lib/3d-gen';
+import { fetchBuildingDetails, type BuildingDetails } from '@/lib/building-details';
+import Building3DOverlay from '@/components/HUD/Building3DOverlay';
 
-const ANALYSIS_INTERVAL_MS = 15_000;
+const ANALYSIS_INTERVAL_MS = 5_000;
+const ENRICHMENT_CACHE_MAX = 20;
+const ENRICHMENT_CACHE_MIN_CONFIDENCE = 0.55;
+const AUTO_MODE_CONFIDENCE_THRESHOLD = 0.4;
+
+function normalizeCachePart(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getEnrichmentCacheKey(
+  mode: "building" | "product",
+  result: OverlayData,
+  lat: number | null,
+  lng: number | null,
+): string | null {
+  if (result.confidence < ENRICHMENT_CACHE_MIN_CONFIDENCE) return null;
+
+  const title = normalizeCachePart(result.title);
+  if (!title || title.startsWith("no ") || title === "analysis failed") {
+    return null;
+  }
+
+  if (mode === "building") {
+    const locationKey = lat !== null && lng !== null
+      ? `${lat.toFixed(3)}:${lng.toFixed(3)}`
+      : "no-location";
+    return `${mode}:${title}:${locationKey}`;
+  }
+
+  const product = result as ProductData;
+  const compositionKey = normalizeCachePart((product.composition ?? []).slice(0, 3).join("|"));
+  return `${mode}:${title}:${compositionKey}`;
+}
 
 export default function Home() {
   const cameraRef = useRef<CameraFeedHandle>(null!);
 
   // ── Hooks ────────────────────────────────────────────────────
-  const { activeMode, selection, setSelection, updateFromAnalysis } = useMode();
+  const { activeMode, selection, isAutoDetect, setSelection, updateFromAnalysis } = useMode();
   const { connectionState, connect, disconnect, updateContext } = useLiveVoice();
   const { lat, lng } = useLocation();
   const { isDemoMode, toggleDemoMode, demoData, isDemoAnalyzing, simulateAnalysis, speakDemoScript } = useDemoMode();
@@ -32,10 +68,18 @@ export default function Home() {
   const analyzingRef = useRef(false);
   const lastCallRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const requestIdRef = useRef(0);
+  const enrichmentCacheRef = useRef<Map<string, OverlayData>>(new Map());
+  const pendingEnrichmentRef = useRef<Map<string, Promise<OverlayData>>>(new Map());
 
   // ── Decomposition state ─────────────────────────────────────────────
   const [isDecomposing, setIsDecomposing] = useState(false);
   const [decomposition, setDecomposition] = useState<DecompositionResult | null>(null);
+
+  // ── 3D scan state ─────────────────────────────────────────────────
+  const [isScanning3D, setIsScanning3D] = useState(false);
+  const [model3DUrl, setModel3DUrl] = useState<string | null>(null);
+  const [buildingDetails, setBuildingDetails] = useState<BuildingDetails | null>(null);
 
   // ── Core analysis pipeline ───────────────────────────────────
   const runAnalysis = useCallback(async () => {
@@ -51,34 +95,114 @@ export default function Home() {
     lastCallRef.current = now;
     setIsAnalyzing(true);
 
-    try {
-      let result: OverlayData;
+    // Stale-result protection: each request gets a unique ID
+    const thisRequestId = ++requestIdRef.current;
 
-      if (activeMode === 'building') {
-        const enriched = await enrichBuildingData(frame, lat, lng);
-        result = enriched.data;
-        // Bridge voice context — send analysis summary to Live API
-        if (enriched.voiceSummary) {
-          updateContext(enriched.voiceSummary);
+    try {
+      // ── Step 1: Scene classification in auto mode ─────────────
+      let effectiveMode: "building" | "product" = activeMode === "product" ? "product" : "building";
+      if (isAutoDetect) {
+        const classification = await analyzeFrame(frame, 'unknown');
+        if (requestIdRef.current !== thisRequestId) return;
+        if (
+          classification.confidence >= AUTO_MODE_CONFIDENCE_THRESHOLD &&
+          (classification.mode === 'building' || classification.mode === 'product')
+        ) {
+          effectiveMode = classification.mode;
         }
-      } else {
-        result = await enrichProductData(frame, lat, lng);
-        // Bridge voice context for product mode
-        if (result.subtitle) {
-          updateContext(result.subtitle);
-        }
+        updateFromAnalysis(classification);
       }
 
-      setData(result);
-      // Feed to auto-detect
-      updateFromAnalysis(result);
+      // ── Step 2: Fast base analysis (display immediately) ──────
+      let baseResult: OverlayData;
+      let voiceSummary: string | undefined;
+
+      if (effectiveMode === 'building') {
+        const base = await getBaseBuildingAnalysis(frame);
+        baseResult = base.data;
+        voiceSummary = base.voiceSummary;
+      } else {
+        baseResult = await getBaseProductAnalysis(frame);
+        voiceSummary = buildProductVoiceSummary(baseResult as ProductData);
+      }
+
+      if (requestIdRef.current !== thisRequestId) return;
+      setData(baseResult);
+      if (voiceSummary) updateContext(voiceSummary);
+
+      // ── Step 3: Check enrichment cache ────────────────────────
+      const cacheKey = getEnrichmentCacheKey(effectiveMode, baseResult, lat, lng);
+      const cached = cacheKey ? enrichmentCacheRef.current.get(cacheKey) : undefined;
+      if (cached) {
+        setData(cached);
+        return;
+      }
+
+      // ── Step 4: Async enrichment (non-blocking) ───────────────
+      const enrichMode = effectiveMode;
+      const enrichBase = baseResult;
+      void (async () => {
+        try {
+          let enrichmentPromise = cacheKey
+            ? pendingEnrichmentRef.current.get(cacheKey)
+            : undefined;
+
+          if (!enrichmentPromise) {
+            enrichmentPromise = (async () => {
+              if (enrichMode === 'building') {
+                const enriched = await enrichBuildingFromBase(
+                  enrichBase as BuildingData, lat, lng,
+                );
+                return enriched.data;
+              }
+
+              return enrichProductFromBase(enrichBase as ProductData);
+            })();
+
+            if (cacheKey) {
+              pendingEnrichmentRef.current.set(cacheKey, enrichmentPromise);
+            }
+
+            enrichmentPromise.finally(() => {
+              if (cacheKey) {
+                pendingEnrichmentRef.current.delete(cacheKey);
+              }
+            });
+          }
+
+          const enrichedResult = await enrichmentPromise;
+
+          if (requestIdRef.current === thisRequestId) {
+            if (enrichMode === 'building') {
+              updateContext(buildBuildingVoiceSummary(enrichedResult as BuildingData));
+            } else {
+              updateContext(buildProductVoiceSummary(enrichedResult as ProductData));
+            }
+          }
+
+          // Stale guard: only apply if this is still the latest request
+          if (requestIdRef.current !== thisRequestId) return;
+          setData(enrichedResult);
+
+          // Cache enriched result (evict oldest if full)
+          if (cacheKey) {
+            if (enrichmentCacheRef.current.size >= ENRICHMENT_CACHE_MAX) {
+              const firstKey = enrichmentCacheRef.current.keys().next().value;
+              if (firstKey !== undefined) enrichmentCacheRef.current.delete(firstKey);
+            }
+            enrichmentCacheRef.current.set(cacheKey, enrichedResult);
+          }
+        } catch (err) {
+          console.error('[enrichment]', err);
+        }
+      })();
     } catch (err) {
       console.error("[analysis]", err);
     } finally {
       setIsAnalyzing(false);
       analyzingRef.current = false;
     }
-  }, [activeMode, lat, lng, updateContext, updateFromAnalysis]);
+  }, [activeMode, isAutoDetect, lat, lng, updateContext, updateFromAnalysis]);
 
   // ── Auto-analysis interval ──────────────────────────────────
   useEffect(() => {
@@ -103,7 +227,9 @@ export default function Home() {
   // ── Clear data when mode changes ────────────────────────────
   useEffect(() => {
     setData(null);
-    lastCallRef.current = 0; // allow immediate re-analysis
+    lastCallRef.current = 0;
+    enrichmentCacheRef.current.clear();
+    pendingEnrichmentRef.current.clear();
   }, [activeMode]);
 
   // ── Demo mode: override data with demo data ─────────────────
@@ -146,6 +272,37 @@ export default function Home() {
     }
   }, [displayData?.title]);
 
+  // ── 3D Scan handler ───────────────────────────────────────────────
+  const handleScan3D = useCallback(async () => {
+    const frame = cameraRef.current?.captureFrame();
+    const buildingName = displayData?.title;
+    if (!frame || !buildingName) return;
+
+    setIsScanning3D(true);
+    setBuildingDetails(null);
+    try {
+      // Check for pre-baked model (Marina Bay Sands)
+      const isMBS = buildingName.toLowerCase().includes('marina bay sands');
+
+      // Run 3D generation and building details in parallel
+      const [glbUrl, details] = await Promise.all([
+        isMBS ? Promise.resolve('/models/mbs.glb') : generate3DModel(frame),
+        fetchBuildingDetails(buildingName),
+      ]);
+
+      if (glbUrl) {
+        setModel3DUrl(glbUrl);
+      }
+      if (details) {
+        setBuildingDetails(details);
+      }
+    } catch (err) {
+      console.error('[3d-scan]', err);
+    } finally {
+      setIsScanning3D(false);
+    }
+  }, [displayData?.title]);
+
   return (
     <>
       <CameraFeed ref={cameraRef} />
@@ -155,6 +312,8 @@ export default function Home() {
         mode={activeMode}
         onDecompose={displayData?.mode === 'product' ? handleDecompose : undefined}
         isDecomposing={isDecomposing}
+        onScan3D={displayData?.mode === 'building' ? handleScan3D : undefined}
+        isScanning3D={isScanning3D}
       />
 
       {/* Tap-to-scan overlay — center of screen */}
@@ -217,6 +376,19 @@ export default function Home() {
           imageBase64={decomposition.imageBase64}
           description={decomposition.description}
           onClose={() => setDecomposition(null)}
+        />
+      )}
+
+      {/* 3D building scan overlay */}
+      {model3DUrl && (
+        <Building3DOverlay
+          glbUrl={model3DUrl}
+          buildingDetails={buildingDetails}
+          buildingName={displayData?.title ?? 'Building'}
+          onClose={() => {
+            setModel3DUrl(null);
+            setBuildingDetails(null);
+          }}
         />
       )}
 
