@@ -1,0 +1,90 @@
+import { analyzeFrame, enrichWithGrounding } from '@/lib/gemini';
+import type { ProductData } from '@/types/overlay';
+
+/**
+ * No-product fallback when Gemini can't identify a product in the frame.
+ */
+const NO_PRODUCT_FALLBACK: ProductData = {
+  mode: 'product',
+  title: 'No Product Detected',
+  subtitle: 'Point the camera at a product, label, or packaging',
+  panels: [],
+  confidence: 0,
+  timestamp: Date.now(),
+};
+
+/**
+ * Product data enrichment pipeline.
+ *
+ * 1. analyzeFrame  → Gemini structured output (product identification + composition)
+ * 2. enrichWithGrounding → Google Search grounding (price, alternatives, sustainability)
+ * 3. Merge into complete ProductData
+ * 4. Generate voice context summary
+ */
+export async function enrichProductData(
+  frameBase64: string
+): Promise<ProductData> {
+  // ── Step 1: Gemini product analysis ──────────────────────────
+  const raw = await analyzeFrame(frameBase64, 'product');
+
+  // If confidence is too low or analysis failed, return helpful fallback
+  if (raw.confidence < 0.3 || raw.title === 'Analysis Failed') {
+    return { ...NO_PRODUCT_FALLBACK, timestamp: Date.now() };
+  }
+
+  // Cast to ProductData — analyzeFrame spreads product-specific fields
+  const product = raw as ProductData;
+
+  // ── Step 2: Search Grounding enrichment ─────────────────────
+  const groundingQuery = [
+    product.title,
+    'price',
+    'sustainability',
+    'alternatives',
+  ].join(' ');
+
+  const grounding = await enrichWithGrounding(groundingQuery, 'product');
+
+  // ── Step 3: Merge grounding insights into product data ──────
+  const enriched: ProductData = {
+    ...product,
+    timestamp: Date.now(),
+    // Extend panels with grounding results if we got useful text
+    panels: [
+      ...product.panels,
+      ...(grounding.text
+        ? [
+            {
+              label: 'Market Intelligence',
+              value: grounding.text.slice(0, 500),
+              type: 'text' as const,
+            },
+          ]
+        : []),
+      ...(grounding.sources.length > 0
+        ? [
+            {
+              label: 'Sources',
+              value: grounding.sources
+                .slice(0, 3)
+                .map((s) => s.title)
+                .join(' · '),
+              type: 'text' as const,
+            },
+          ]
+        : []),
+    ],
+  };
+
+  // ── Step 4: Generate voice context summary ──────────────────
+  const topMaterials = (enriched.composition ?? []).slice(0, 3).join(', ') || 'unknown materials';
+  const sustainability = enriched.sustainabilityScore != null
+    ? `${enriched.sustainabilityScore}/10`
+    : 'unknown';
+  const price = enriched.priceEstimate ?? 'unknown';
+
+  enriched.subtitle =
+    `Looking at ${enriched.title}. Made of ${topMaterials}. Sustainability: ${sustainability}. Price estimate: ${price}.`;
+
+  return enriched;
+}

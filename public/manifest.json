@@ -1,0 +1,22 @@
+{
+  "name": "Reality Browser",
+  "short_name": "Reality",
+  "description": "See the world through AI-enhanced reality",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0a0a0a",
+  "background_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
