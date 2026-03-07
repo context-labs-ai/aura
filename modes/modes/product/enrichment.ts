@@ -1,4 +1,7 @@
 import { analyzeFrame, enrichWithGrounding } from '@/lib/gemini';
+import { reverseGeocode } from '@/lib/geocoding';
+import { getUserContext } from '@/lib/user-context';
+import type { GroundingContext } from '@/types/grounding';
 import type { ProductData } from '@/types/overlay';
 
 /**
@@ -22,7 +25,9 @@ const NO_PRODUCT_FALLBACK: ProductData = {
  * 4. Generate voice context summary
  */
 export async function enrichProductData(
-  frameBase64: string
+  frameBase64: string,
+  lat: number | null = null,
+  lng: number | null = null
 ): Promise<ProductData> {
   // ── Step 1: Gemini product analysis ──────────────────────────
   const raw = await analyzeFrame(frameBase64, 'product');
@@ -36,14 +41,25 @@ export async function enrichProductData(
   const product = raw as ProductData;
 
   // ── Step 2: Search Grounding enrichment ─────────────────────
-  const groundingQuery = [
-    product.title,
-    'price',
-    'sustainability',
-    'alternatives',
-  ].join(' ');
+  const groundingContext: GroundingContext = {
+    query: `${product.title} ${product.subtitle}`.trim(),
+    mode: 'product',
+    user: getUserContext(),
+    visualContext: {
+      title: product.title,
+      subtitle: product.subtitle,
+      confidence: product.confidence,
+    },
+  };
 
-  const grounding = await enrichWithGrounding(groundingQuery, 'product');
+  if (lat !== null && lng !== null) {
+    groundingContext.location = {
+      coordinates: { lat, lng },
+      address: (await reverseGeocode(lat, lng)) ?? undefined,
+    };
+  }
+
+  const grounding = await enrichWithGrounding(groundingContext);
 
   // ── Step 3: Merge grounding insights into product data ──────
   const enriched: ProductData = {

@@ -62,7 +62,7 @@ export default function Home() {
           updateContext(enriched.voiceSummary);
         }
       } else {
-        result = await enrichProductData(frame);
+        result = await enrichProductData(frame, lat, lng);
         // Bridge voice context for product mode
         if (result.subtitle) {
           updateContext(result.subtitle);

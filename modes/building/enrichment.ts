@@ -1,6 +1,9 @@
 import { analyzeFrame, enrichWithGrounding } from '@/lib/gemini';
 import type { GroundingSource } from '@/lib/gemini';
+import { reverseGeocode } from '@/lib/geocoding';
 import { searchNearbyPlaces, getPlaceDetails } from '@/lib/places';
+import { getUserContext } from '@/lib/user-context';
+import type { GroundingContext } from '@/types/grounding';
 import type { BuildingData } from '@/types/overlay';
 
 // ---------------------------------------------------------------------------
@@ -62,7 +65,25 @@ export async function enrichBuildingData(
   // ── Step 2: Search Grounding for real-time web data ────────────────────
   const groundingQuery = `${overlayData.title} ${overlayData.subtitle}`.trim();
   if (groundingQuery) {
-    const grounded = await enrichWithGrounding(groundingQuery, 'building');
+    const groundingContext: GroundingContext = {
+      query: groundingQuery,
+      mode: 'building',
+      user: getUserContext(),
+      visualContext: {
+        title: overlayData.title,
+        subtitle: overlayData.subtitle,
+        confidence: overlayData.confidence,
+      },
+    };
+
+    if (lat !== null && lng !== null) {
+      groundingContext.location = {
+        coordinates: { lat, lng },
+        address: (await reverseGeocode(lat, lng)) ?? undefined,
+      };
+    }
+
+    const grounded = await enrichWithGrounding(groundingContext);
 
     if (grounded.text) {
       buildingBase.neighborhoodSummary = grounded.text;

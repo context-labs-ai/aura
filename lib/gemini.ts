@@ -5,6 +5,7 @@ import {
   productAnalysisSchema,
   sceneClassificationSchema,
 } from '@/types/gemini';
+import type { GroundingContext } from '@/types/grounding';
 import { MODE_CONFIGS, type AnalysisMode } from '@/types/modes';
 
 const ai = new GoogleGenAI({
@@ -125,11 +126,49 @@ export interface GroundedResult {
   searchQueries: string[];
 }
 
-const GROUNDING_PROMPTS: Record<'building' | 'product', (query: string) => string> = {
-  building: (q) =>
-    `You are a local business expert. For the business/building "${q}", provide: current reviews summary, opening hours, busy times, neighborhood vibe, and any recent news. Be concise.`,
-  product: (q) =>
-    `You are a consumer product expert. For the product "${q}", provide: current retail price range, top 2 alternatives, sustainability/eco info, and recent recalls or news. Be concise.`,
+function buildLocationPrompt(context: GroundingContext): string {
+  if (!context.location) {
+    return 'No user location is available, so avoid making overly specific local claims.';
+  }
+
+  const { coordinates, address } = context.location;
+  if (address?.city || address?.country) {
+    return `User location context: ${address.city ?? 'Unknown city'}, ${address.country ?? 'Unknown country'} (${address.formatted}). Coordinates: ${coordinates.lat}, ${coordinates.lng}.`;
+  }
+
+  return `User coordinates: ${coordinates.lat}, ${coordinates.lng}.`;
+}
+
+function buildVisualPrompt(context: GroundingContext): string {
+  if (!context.visualContext) {
+    return 'No visual context was provided.';
+  }
+
+  const { title, subtitle, confidence } = context.visualContext;
+  return `Visual analysis suggests title "${title}", subtitle "${subtitle}", confidence ${confidence}.`;
+}
+
+const GROUNDING_PROMPTS: Record<'building' | 'product', (context: GroundingContext) => string> = {
+  building: (context) =>
+    [
+      'You are a local business expert.',
+      `Investigate the business or building "${context.query}".`,
+      buildVisualPrompt(context),
+      buildLocationPrompt(context),
+      `User context: local time ${context.user.localTime}, timezone ${context.user.timezone}, language ${context.user.language}.`,
+      'Provide: current reviews summary, opening hours, busy times, neighborhood vibe, and any recent news.',
+      'Keep the answer concise, practical, and localized to the user context when the sources support it.',
+    ].join(' '),
+  product: (context) =>
+    [
+      'You are a consumer product expert.',
+      `Investigate the product "${context.query}".`,
+      buildVisualPrompt(context),
+      buildLocationPrompt(context),
+      `User context: local time ${context.user.localTime}, timezone ${context.user.timezone}, language ${context.user.language}.`,
+      'Provide: current retail price range, top 2 alternatives, sustainability or eco info, and recent recalls or news.',
+      'Keep the answer concise, practical, and localized to the user context when the sources support it.',
+    ].join(' '),
 };
 
 /**
@@ -137,11 +176,10 @@ const GROUNDING_PROMPTS: Record<'building' | 'product', (query: string) => strin
  * Uses Pro model for higher quality (not on the real-time critical path).
  */
 export async function enrichWithGrounding(
-  query: string,
-  mode: 'building' | 'product'
+  context: GroundingContext
 ): Promise<GroundedResult> {
   try {
-    const prompt = GROUNDING_PROMPTS[mode](query);
+    const prompt = GROUNDING_PROMPTS[context.mode](context);
 
     const response = await ai.models.generateContent({
       model: GROUNDING_MODEL,
