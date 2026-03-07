@@ -19,7 +19,7 @@ import { generate3DModel } from '@/lib/3d-gen';
 import { fetchBuildingDetails, type BuildingDetails } from '@/lib/building-details';
 import Building3DOverlay from '@/components/HUD/Building3DOverlay';
 
-const ANALYSIS_INTERVAL_MS = 5_000;
+const ANALYSIS_COOLDOWN_MS = 2_000;
 const ENRICHMENT_CACHE_MAX = 20;
 const ENRICHMENT_CACHE_MIN_CONFIDENCE = 0.55;
 const AUTO_MODE_CONFIDENCE_THRESHOLD = 0.4;
@@ -58,7 +58,7 @@ export default function Home() {
 
   // ── Hooks ────────────────────────────────────────────────────
   const { activeMode, selection, isAutoDetect, setSelection, updateFromAnalysis } = useMode();
-  const { connectionState, connect, disconnect, updateContext } = useLiveVoice();
+  const { connectionState, connect, disconnect, updateContext, onAnalysisRequested } = useLiveVoice();
   const { lat, lng } = useLocation();
   const { isDemoMode, toggleDemoMode, demoData, isDemoAnalyzing, simulateAnalysis, speakDemoScript } = useDemoMode();
 
@@ -67,7 +67,6 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const analyzingRef = useRef(false);
   const lastCallRef = useRef(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const requestIdRef = useRef(0);
   const enrichmentCacheRef = useRef<Map<string, OverlayData>>(new Map());
   const pendingEnrichmentRef = useRef<Map<string, Promise<OverlayData>>>(new Map());
@@ -83,9 +82,9 @@ export default function Home() {
 
   // ── Core analysis pipeline ───────────────────────────────────
   const runAnalysis = useCallback(async () => {
-    // Throttle guard
+    // Cooldown guard — prevent rapid re-triggers
     const now = Date.now();
-    if (now - lastCallRef.current < ANALYSIS_INTERVAL_MS) return;
+    if (now - lastCallRef.current < ANALYSIS_COOLDOWN_MS) return;
     if (analyzingRef.current) return;
 
     const frame = cameraRef.current?.captureFrame();
@@ -192,6 +191,18 @@ export default function Home() {
             }
             enrichmentCacheRef.current.set(cacheKey, enrichedResult);
           }
+
+          // ── Step 5: Fetch building details (year, architect, height, etc.) ──
+          if (enrichMode === 'building' && enrichedResult.title) {
+            fetchBuildingDetails(enrichedResult.title).then((details) => {
+              if (details && requestIdRef.current === thisRequestId) {
+                setData((prev) => {
+                  if (!prev || prev.mode !== 'building') return prev;
+                  return { ...prev, buildingDetails: details } as BuildingData;
+                });
+              }
+            }).catch(() => { /* non-critical */ });
+          }
         } catch (err) {
           console.error('[enrichment]', err);
         }
@@ -204,25 +215,14 @@ export default function Home() {
     }
   }, [activeMode, isAutoDetect, lat, lng, updateContext, updateFromAnalysis]);
 
-  // ── Auto-analysis interval ──────────────────────────────────
+  // ── Voice-triggered analysis ──────────────────────────────────
   useEffect(() => {
-    if (isDemoMode) return; // demo mode handles its own timing
-
-    // Initial analysis after camera warms up
-    const initialTimeout = setTimeout(() => {
+    onAnalysisRequested.current = () => {
+      lastCallRef.current = 0;
       runAnalysis();
-    }, 2500);
-
-    intervalRef.current = setInterval(runAnalysis, ANALYSIS_INTERVAL_MS);
-
-    return () => {
-      clearTimeout(initialTimeout);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
     };
-  }, [runAnalysis, isDemoMode]);
+    return () => { onAnalysisRequested.current = null; };
+  }, [runAnalysis, onAnalysisRequested]);
 
   // ── Clear data when mode changes ────────────────────────────
   useEffect(() => {
@@ -314,21 +314,53 @@ export default function Home() {
         isDecomposing={isDecomposing}
         onScan3D={displayData?.mode === 'building' ? handleScan3D : undefined}
         isScanning3D={isScanning3D}
+        onAnalyze={handleManualScan}
+        lat={lat}
+        lng={lng}
       />
 
-      {/* Tap-to-scan overlay — center of screen */}
-      <div
+      {/* ANALYZE button — centered bottom */}
+      <button
         onClick={handleManualScan}
+        disabled={isAnalyzing}
         style={{
           position: 'fixed',
-          top: '35%',
-          left: '30%',
-          width: '40%',
-          height: '30%',
-          zIndex: 20,
-          cursor: 'pointer',
+          bottom: 'calc(env(safe-area-inset-bottom, 16px) + 60px)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 25,
+          padding: '12px 32px',
+          border: `1px solid ${isAnalyzing ? 'rgba(0,240,255,0.15)' : 'rgba(0,240,255,0.5)'}`,
+          borderRadius: 28,
+          background: isAnalyzing ? 'rgba(0,240,255,0.05)' : 'rgba(0,240,255,0.12)',
+          color: isAnalyzing ? 'rgba(255,255,255,0.4)' : 'var(--hud-cyan, #00f0ff)',
+          fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          letterSpacing: '0.15em',
+          cursor: isAnalyzing ? 'not-allowed' : 'pointer',
+          textTransform: 'uppercase',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          boxShadow: isAnalyzing ? 'none' : '0 0 20px rgba(0,240,255,0.15)',
+          transition: 'all 0.2s ease',
+          pointerEvents: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
         }}
-      />
+      >
+        {isAnalyzing ? (
+          <>
+            <span className="hud-spin" style={{ display: 'inline-block', width: 14, height: 14 }}>◐</span>
+            ANALYZING...
+          </>
+        ) : (
+          <>
+            ◉ ANALYZE
+          </>
+        )}
+      </button>
 
       {/* Mode switcher */}
       <ModeSwitch selection={selection} onSelect={setSelection} />
@@ -338,13 +370,9 @@ export default function Home() {
         connectionState={connectionState}
         onConnect={async () => {
           await connect();
-          // Trigger immediate analysis so voice has context ASAP
-          lastCallRef.current = 0;
-          runAnalysis();
         }}
         onDisconnect={disconnect}
       />
-
       {/* Demo mode toggle — bottom-left */}
       <button
         onClick={toggleDemoMode}

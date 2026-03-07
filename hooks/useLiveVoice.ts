@@ -21,6 +21,8 @@ export interface UseLiveVoiceResult {
   disconnect: () => void;
   /** Push scene analysis text so the AI knows what the camera sees */
   updateContext: (text: string) => void;
+  /** Mutable ref — page.tsx sets this to wire voice-triggered analysis */
+  onAnalysisRequested: React.MutableRefObject<(() => void) | null>;
 }
 
 export function useLiveVoice(): UseLiveVoiceResult {
@@ -29,6 +31,7 @@ export function useLiveVoice(): UseLiveVoiceResult {
 
   const clientRef = useRef<LiveAPIClient | null>(null);
   const micRef = useRef<MicController | null>(null);
+  const analysisCallbackRef = useRef<(() => void) | null>(null);
 
   // Stable error handler
   const handleError = useCallback((err: Error) => {
@@ -42,6 +45,9 @@ export function useLiveVoice(): UseLiveVoiceResult {
     const client = new LiveAPIClient({
       onStateChange: (state) => setConnectionState(state),
       onError: handleError,
+      onAnalysisRequested: () => {
+        analysisCallbackRef.current?.();
+      },
     });
     clientRef.current = client;
 
@@ -93,5 +99,6 @@ export function useLiveVoice(): UseLiveVoiceResult {
     connect,
     disconnect,
     updateContext,
+    onAnalysisRequested: analysisCallbackRef,
   };
 }

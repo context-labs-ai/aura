@@ -28,9 +28,12 @@ interface HUDOverlayProps {
   isDecomposing?: boolean;
   onScan3D?: () => void;
   isScanning3D?: boolean;
+  onAnalyze?: () => void;
+  lat?: number | null;
+  lng?: number | null;
 }
 
-export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDecomposing, onScan3D, isScanning3D }: HUDOverlayProps) {
+export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDecomposing, onScan3D, isScanning3D, onAnalyze, lat, lng }: HUDOverlayProps) {
   const hasData = data !== undefined;
   const modeIcon = data?.mode === "product" ? "📦" : "🏢";
   const modeLabel = data?.mode === "product" ? "PRODUCT X-RAY" : "BUILDING X-RAY";
@@ -42,7 +45,7 @@ export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDec
       <div className="hud-vignette" />
 
       {/* Scanning animation — only during analysis */}
-      {(!hasData || isAnalyzing) && <ScanLine />}
+      {isAnalyzing && <ScanLine />}
 
       {/* Center targeting reticle */}
       <CornerBrackets />
@@ -84,8 +87,8 @@ export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDec
           </div>
         )}
 
-        {/* Case 2: Data is null — empty state prompt */}
-        {hasData && data === null && (
+        {/* Case 2: Data is null — empty state with ANALYZE prompt */}
+        {hasData && data === null && !isAnalyzing && (
           <div className="hud-empty-state">
             <span className="hud-empty-state__icon">◎</span>
             <span className="hud-empty-state__text">
@@ -101,9 +104,10 @@ export default function HUDOverlay({ data, isAnalyzing, mode, onDecompose, isDec
             data={data}
             onScan3D={onScan3D}
             isScanning3D={isScanning3D}
+            lat={lat}
+            lng={lng}
           />
         )}
-
         {/* Case 4: Product data */}
         {hasData && data && isProductData(data) && (
           <ProductOverlay

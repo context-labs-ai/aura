@@ -1,6 +1,6 @@
 "use client";
 
-import { GoogleGenAI, Modality, type LiveServerMessage, type Session } from "@google/genai";
+import { GoogleGenAI, Modality, Type, type LiveServerMessage, type Session, type FunctionDeclaration } from "@google/genai";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -16,28 +16,33 @@ export type ConnectionState =
 export interface LiveAPICallbacks {
   onStateChange?: (state: ConnectionState) => void;
   onError?: (error: Error) => void;
+  onAnalysisRequested?: () => void;
 }
 
 const LIVE_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 const SYSTEM_INSTRUCTION = [
   'You are an expert analyst assistant for a camera-based reality browser app.',
-  'CRITICAL: You CANNOT see the camera. You are AUDIO ONLY. You have NO visual input.',
-  'You will receive SCENE CONTEXT UPDATES as text messages — these come from a separate vision AI that analyzes the camera feed.',
+  'You are AUDIO ONLY -- you cannot see the camera directly.',
+  'However, you have a tool called "analyze_scene" that triggers the camera to analyze what it currently sees.',
   '',
   'CAPABILITIES:',
-  '- You have Google Search enabled. When the user asks about a product, business, or topic, you can search the web for real-time information.',
-  '- Use search to find prices, reviews, specifications, news, comparisons, and other factual data.',
+  '- You can call the analyze_scene tool to scan and identify what the camera is pointing at.',
+  '- After analysis completes, you will receive a SCENE CONTEXT UPDATE with the results.',
+  '- You have Google Search enabled for real-time information lookup.',
+  '',
+  'WHEN TO USE analyze_scene:',
+  '- User says "analyze this", "what is this?", "scan this", "what am I looking at?", "help me analyze", or similar requests.',
+  '- Call analyze_scene ONCE, then wait for the scene context update before responding.',
+  '- After calling the tool, say something brief like "Scanning now..." or "Let me take a look."',
   '',
   'RULES:',
-  '1. NEVER describe what you "see" — you see NOTHING. You are blind.',
-  '2. When the user asks "what is this?" or "what am I looking at?", check if you have received a recent scene context update.',
-  '3. If you HAVE context: answer based on that context. Speak naturally as if you know the scene.',
-  '4. If you have NO context yet: say "Let me analyze that for you — one moment" or "I\'m scanning that now, hold on." Do NOT guess.',
-  '5. NEVER hallucinate or invent what might be in the scene. Only discuss what the scene context tells you.',
-  '6. Keep responses concise — 1-3 sentences. You are a real-time assistant, not a lecturer.',
-  '7. Be professional and data-driven in tone.',
-  '8. When the user asks about product details, pricing, or comparisons, proactively use Google Search to provide accurate, up-to-date information.',
+  '1. If the user asks about the scene and you have NO context yet, call analyze_scene first.',
+  '2. If you HAVE recent context, answer based on that context. Do NOT re-analyze unless asked.',
+  '3. NEVER hallucinate or invent what might be in the scene. Only discuss what the scene context tells you.',
+  '4. Keep responses concise -- 1-3 sentences. You are a real-time assistant, not a lecturer.',
+  '5. Be professional and data-driven in tone.',
+  '6. Use Google Search for product details, pricing, reviews, or factual lookups.',
 ].join('\n');
 
 // Output audio from the API is 24 kHz PCM
@@ -45,6 +50,16 @@ const OUTPUT_SAMPLE_RATE = 24000;
 
 // Target sample rate for mic input to Live API
 const MIC_SAMPLE_RATE = 16000;
+
+// Function declaration for scene analysis tool
+const ANALYZE_SCENE_DECLARATION: FunctionDeclaration = {
+  name: 'analyze_scene',
+  description: 'Analyze what the camera is currently pointing at. Triggers the vision AI to capture and identify the current scene -- building, product, or object. Call this when the user asks to analyze, scan, or identify something.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Audio playback helper – schedules base64 PCM chunks seamlessly
@@ -56,7 +71,7 @@ class AudioPlayer {
 
   async play(base64Pcm: string): Promise<void> {
     if (!this.ctx || this.ctx.state === "closed") {
-      // Safari may not support custom sampleRate — use default then resample
+      // Safari may not support custom sampleRate -- use default then resample
       try {
         this.ctx = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
       } catch {
@@ -194,7 +209,7 @@ export class LiveAPIClient {
           systemInstruction: {
             parts: [{ text: SYSTEM_INSTRUCTION }],
           },
-          tools: [{ googleSearch: {} }],
+          tools: [{ googleSearch: {} }, { functionDeclarations: [ANALYZE_SCENE_DECLARATION] }],
         },
         callbacks: {
           onopen: () => {
@@ -265,7 +280,7 @@ export class LiveAPIClient {
             role: "user",
             parts: [
               {
-                text: `[SCENE CONTEXT UPDATE — do not respond to this, just absorb it for future questions]\n${text}`,
+                text: `[SCENE CONTEXT UPDATE -- do not respond to this, just absorb it for future questions]\n${text}`,
               },
             ],
           },
@@ -273,7 +288,7 @@ export class LiveAPIClient {
         turnComplete: true,
       });
     } catch {
-      // Swallow — connection may have dropped
+      // Swallow -- connection may have dropped
     }
   }
 
@@ -290,6 +305,32 @@ export class LiveAPIClient {
       // The SDK delivers typed LiveServerMessage objects.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = msg as any;
+
+      // Check for tool calls (function calling)
+      const toolCall = data?.toolCall;
+      if (toolCall?.functionCalls) {
+        for (const fc of toolCall.functionCalls) {
+          if (fc.name === 'analyze_scene') {
+            // Trigger analysis in the UI
+            this.callbacks.onAnalysisRequested?.();
+
+            // Send tool response back to Gemini so it knows the tool was executed
+            if (this.session) {
+              try {
+                this.session.sendToolResponse({
+                  functionResponses: [{
+                    id: fc.id,
+                    name: fc.name,
+                    response: { status: 'triggered', message: 'Analysis started. Scene context will be sent when ready.' },
+                  }],
+                });
+              } catch {
+                // Connection may have dropped
+              }
+            }
+          }
+        }
+      }
 
       // Check for audio in serverContent
       const serverContent = data?.serverContent;
@@ -316,7 +357,7 @@ export class LiveAPIClient {
         }
       }
     } catch {
-      // Ignore parse errors — not all messages are audio
+      // Ignore parse errors -- not all messages are audio
     }
   }
 
@@ -346,7 +387,7 @@ export class LiveAPIClient {
 }
 
 // ---------------------------------------------------------------------------
-// Mic audio capture — returns a controller to start/stop streaming PCM chunks
+// Mic audio capture -- returns a controller to start/stop streaming PCM chunks
 // ---------------------------------------------------------------------------
 
 export interface MicController {
@@ -365,7 +406,7 @@ export async function startMicCapture(
 ): Promise<MicController> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  // Safari doesn't support custom sampleRate on AudioContext —
+  // Safari doesn't support custom sampleRate on AudioContext --
   // create with default rate, then downsample in the processor
   let audioContext: AudioContext;
   try {
