@@ -7,7 +7,7 @@ import {
 } from '@/lib/ui-shell';
 
 describe('ui shell adapters', () => {
-  it('maps building data into a time-lens shell model with trust and personas', () => {
+  it('maps building data into a time-lens shell model with trust, personas, and safe default actions', () => {
     const building: BuildingData = {
       mode: 'building',
       title: 'Ferry Building',
@@ -59,14 +59,66 @@ describe('ui shell adapters', () => {
       'build',
     ]);
     expect(model.actions).toEqual({
+      canAskAI: false,
+      canCompare: false,
+      canScan3D: false,
+      canDecompose: false,
+    });
+  });
+
+  it('respects action capability overrides when provided', () => {
+    const building: BuildingData = {
+      mode: 'building',
+      title: 'Ferry Building',
+      subtitle: 'Historic Landmark',
+      panels: [],
+      confidence: 0.95,
+      timestamp: 1,
+      neighborhoodSummary: 'Busy waterfront destination.',
+      historicalSummary: 'Served the waterfront since the late 1800s.',
+      futurePlansStatus: 'proposed',
+      futurePlansSummary: 'Facade work is publicly proposed.',
+      trustLevel: 'high',
+      trustReason: 'Specific place match with grounded sources.',
+    };
+
+    const product: ProductData = {
+      mode: 'product',
+      title: 'Oatly Barista',
+      subtitle: 'Oat Drink',
+      panels: [],
+      confidence: 0.87,
+      timestamp: 2,
+    };
+
+    expect(
+      buildBuildingShellModel(building, {
+        canAskAI: true,
+        canCompare: true,
+        canScan3D: true,
+      }).actions
+    ).toEqual({
       canAskAI: true,
       canCompare: true,
       canScan3D: true,
       canDecompose: false,
     });
+
+    expect(
+      buildProductShellModel(product, {
+        canAskAI: true,
+        canCompare: true,
+        canDecompose: true,
+      }).actions
+    ).toEqual({
+      canAskAI: true,
+      canCompare: true,
+      canScan3D: false,
+      canDecompose: true,
+    });
   });
 
-  it('maps product data into a shell model with composition, market, alternatives, and actions', () => {
+  it('maps product data into a shell model with composition, market, alternatives, and safe default actions', () => {
     const product: ProductData = {
       mode: 'product',
       title: 'Oatly Barista',
@@ -107,11 +159,50 @@ describe('ui shell adapters', () => {
       ])
     );
     expect(model.actions).toEqual({
-      canAskAI: true,
-      canCompare: true,
+      canAskAI: false,
+      canCompare: false,
       canScan3D: false,
-      canDecompose: true,
+      canDecompose: false,
     });
+  });
+
+  it('falls back to safe summaries and empty section items when optional data is missing', () => {
+    const building: BuildingData = {
+      mode: 'building',
+      title: 'Unknown Tower',
+      subtitle: '',
+      panels: [],
+      confidence: 0.41,
+      timestamp: 3,
+    };
+    const product: ProductData = {
+      mode: 'product',
+      title: 'Mystery Bottle',
+      subtitle: '',
+      panels: [],
+      confidence: 0.52,
+      timestamp: 4,
+    };
+
+    const buildingModel = buildBuildingShellModel(building);
+    const productModel = buildProductShellModel(product);
+
+    expect(buildingModel.personas.map((persona) => persona.summary)).toEqual([
+      'No historical context yet.',
+      'Unknown Tower',
+      'No future plans found.',
+      'Unknown Tower',
+    ]);
+    expect(productModel.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'composition', items: [] }),
+        expect.objectContaining({
+          id: 'market',
+          items: ['Price estimate: Unknown', 'Sustainability score: Unknown'],
+        }),
+        expect.objectContaining({ id: 'alternatives', items: [] }),
+      ])
+    );
   });
 
   it('returns landing when there is no captured frame or result data', () => {
