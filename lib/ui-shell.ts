@@ -9,6 +9,8 @@ export interface ShellActionState {
   canDecompose: boolean;
 }
 
+export type ShellActionCapabilities = Partial<ShellActionState>;
+
 export interface ShellSection {
   id: string;
   title: string;
@@ -55,6 +57,18 @@ function toConfidenceLabel(confidence: number): string {
   return `${Math.round(confidence * 100)}% confidence`;
 }
 
+function getSafeActionState(
+  overrides: ShellActionCapabilities = {}
+): ShellActionState {
+  return {
+    canAskAI: false,
+    canCompare: false,
+    canScan3D: false,
+    canDecompose: false,
+    ...overrides,
+  };
+}
+
 function getPersonaSummary(data: BuildingData, persona: ShellPersona['id']): string {
   const current = data.neighborhoodSummary || data.reviewSummary || data.subtitle || data.title;
   const history = data.historicalSummary || 'No historical context yet.';
@@ -88,7 +102,10 @@ export function getShellViewState(input: {
   return 'landing';
 }
 
-export function buildBuildingShellModel(data: BuildingData): BuildingShellModel {
+export function buildBuildingShellModel(
+  data: BuildingData,
+  capabilities: ShellActionCapabilities = {}
+): BuildingShellModel {
   const currentSummary = data.neighborhoodSummary || data.reviewSummary || data.subtitle || data.title;
   const futureSummary = data.futurePlansSummary || 'No future plans found.';
   const futureStatus = data.futurePlansStatus || 'none_found';
@@ -137,16 +154,14 @@ export function buildBuildingShellModel(data: BuildingData): BuildingShellModel 
       { id: 'invest', label: 'Invest', summary: getPersonaSummary(data, 'invest') },
       { id: 'build', label: 'Build', summary: getPersonaSummary(data, 'build') },
     ],
-    actions: {
-      canAskAI: true,
-      canCompare: true,
-      canScan3D: true,
-      canDecompose: false,
-    },
+    actions: getSafeActionState(capabilities),
   };
 }
 
-export function buildProductShellModel(data: ProductData): ProductShellModel {
+export function buildProductShellModel(
+  data: ProductData,
+  capabilities: ShellActionCapabilities = {}
+): ProductShellModel {
   return {
     mode: 'product',
     heroTitle: data.title,
@@ -176,11 +191,6 @@ export function buildProductShellModel(data: ProductData): ProductShellModel {
         ),
       },
     ],
-    actions: {
-      canAskAI: true,
-      canCompare: true,
-      canScan3D: false,
-      canDecompose: true,
-    },
+    actions: getSafeActionState(capabilities),
   };
 }
