@@ -5,7 +5,7 @@ import {
   productAnalysisSchema,
   sceneClassificationSchema,
 } from '@/types/gemini';
-import type { GroundingContext } from '@/types/grounding';
+import type { BuildingGroundingResult, GroundingContext } from '@/types/grounding';
 import { MODE_CONFIGS, type AnalysisMode } from '@/types/modes';
 
 const ai = new GoogleGenAI({
@@ -124,7 +124,17 @@ export interface GroundedResult {
   text: string;
   sources: GroundingSource[];
   searchQueries: string[];
+  buildingDetails?: BuildingGroundingResult;
 }
+
+const EMPTY_BUILDING_GROUNDING_RESULT: BuildingGroundingResult = {
+  currentSummary: '',
+  isLandmark: false,
+  landmarkReason: '',
+  historicalSummary: '',
+  futurePlansStatus: 'none_found',
+  futurePlansSummary: '',
+};
 
 function buildLocationPrompt(context: GroundingContext): string {
   if (!context.location) {
@@ -148,6 +158,30 @@ function buildVisualPrompt(context: GroundingContext): string {
   return `Visual analysis suggests title "${title}", subtitle "${subtitle}", confidence ${confidence}.`;
 }
 
+function buildBuildingOutputContract(): string {
+  const example: BuildingGroundingResult = {
+    currentSummary: 'Current place context summary.',
+    isLandmark: false,
+    landmarkReason: '',
+    historicalSummary: '',
+    futurePlansStatus: 'none_found',
+    futurePlansSummary: '',
+  };
+
+  return [
+    'Return JSON with exactly these keys:',
+    JSON.stringify(example),
+    'Rules:',
+    'Only set isLandmark to true when this is a clearly recognizable landmark, iconic building, historic building, or publicly notable site.',
+    'Prefer site or building history over brand history.',
+    'If the identity is unclear, historicalSummary must be empty and futurePlansStatus must be "none_found".',
+    'futurePlansStatus must be one of: confirmed, proposed, rumored, none_found.',
+    'futurePlansSummary should only include place-specific public plans, renovations, redevelopment, or use changes.',
+    'Do not treat brand expansion, company growth, or generic city trends as site-specific future plans.',
+    'Prefer omission over speculation.',
+  ].join(' ');
+}
+
 const GROUNDING_PROMPTS: Record<'building' | 'product', (context: GroundingContext) => string> = {
   building: (context) =>
     [
@@ -156,7 +190,8 @@ const GROUNDING_PROMPTS: Record<'building' | 'product', (context: GroundingConte
       buildVisualPrompt(context),
       buildLocationPrompt(context),
       `User context: local time ${context.user.localTime}, timezone ${context.user.timezone}, language ${context.user.language}.`,
-      'Provide: current reviews summary, opening hours, busy times, neighborhood vibe, and any recent news.',
+      'Provide current reviews summary, opening hours, busy times, neighborhood vibe, and any recent news in currentSummary.',
+      buildBuildingOutputContract(),
       'Keep the answer concise, practical, and localized to the user context when the sources support it.',
     ].join(' '),
   product: (context) =>
@@ -170,6 +205,26 @@ const GROUNDING_PROMPTS: Record<'building' | 'product', (context: GroundingConte
       'Keep the answer concise, practical, and localized to the user context when the sources support it.',
     ].join(' '),
 };
+
+function parseBuildingGroundingResult(text: string | undefined): BuildingGroundingResult {
+  if (!text) {
+    return EMPTY_BUILDING_GROUNDING_RESULT;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return {
+      currentSummary: parsed.currentSummary ?? '',
+      isLandmark: parsed.isLandmark ?? false,
+      landmarkReason: parsed.landmarkReason ?? '',
+      historicalSummary: parsed.historicalSummary ?? '',
+      futurePlansStatus: parsed.futurePlansStatus ?? 'none_found',
+      futurePlansSummary: parsed.futurePlansSummary ?? '',
+    };
+  } catch {
+    return EMPTY_BUILDING_GROUNDING_RESULT;
+  }
+}
 
 /**
  * Enrich an analysis query with real-time Google Search grounding.
@@ -185,11 +240,14 @@ export async function enrichWithGrounding(
       model: GROUNDING_MODEL,
       contents: prompt,
       config: {
+        ...(context.mode === 'building' ? { responseMimeType: 'application/json' as const } : {}),
         tools: [{ googleSearch: {} }],
       },
     });
 
     const text = response.text ?? '';
+    const buildingDetails =
+      context.mode === 'building' ? parseBuildingGroundingResult(text) : undefined;
 
     // Extract grounding metadata for source citations
     const metadata = response.candidates?.[0]?.groundingMetadata;
@@ -203,9 +261,21 @@ export async function enrichWithGrounding(
 
     const searchQueries = metadata?.webSearchQueries ?? [];
 
-    return { text, sources, searchQueries };
+    return {
+      text: buildingDetails?.currentSummary ?? text,
+      sources,
+      searchQueries,
+      buildingDetails,
+    };
   } catch (error) {
     console.error('[enrichWithGrounding] Error:', error);
-    return { text: '', sources: [], searchQueries: [] };
+    return {
+      text: '',
+      sources: [],
+      searchQueries: [],
+      ...(context.mode === 'building'
+        ? { buildingDetails: EMPTY_BUILDING_GROUNDING_RESULT }
+        : {}),
+    };
   }
 }

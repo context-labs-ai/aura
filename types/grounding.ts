@@ -29,3 +29,14 @@ export interface GroundingContext {
     confidence: number;
   };
 }
+
+export type FuturePlansStatus = 'confirmed' | 'proposed' | 'rumored' | 'none_found';
+
+export interface BuildingGroundingResult {
+  currentSummary: string;
+  isLandmark: boolean;
+  landmarkReason: string;
+  historicalSummary: string;
+  futurePlansStatus: FuturePlansStatus;
+  futurePlansSummary: string;
+}

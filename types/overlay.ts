@@ -17,11 +17,16 @@ export interface OverlayData {
 export interface BuildingData extends OverlayData {
   mode: 'building';
   placeId?: string;
+  isLandmark?: boolean;
+  landmarkReason?: string;
   rating?: number;
   reviewSummary?: string;
   openNow?: boolean;
   hours?: string;
   footTrafficHypothesis?: string;
+  historicalSummary?: string;
+  futurePlansStatus?: 'confirmed' | 'proposed' | 'rumored' | 'none_found';
+  futurePlansSummary?: string;
   neighborhoodSummary?: string;
 }
 

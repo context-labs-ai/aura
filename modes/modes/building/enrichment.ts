@@ -88,6 +88,13 @@ export async function enrichBuildingData(
     if (grounded.text) {
       buildingBase.neighborhoodSummary = grounded.text;
     }
+    if (grounded.buildingDetails) {
+      buildingBase.isLandmark = grounded.buildingDetails.isLandmark;
+      buildingBase.landmarkReason = grounded.buildingDetails.landmarkReason;
+      buildingBase.historicalSummary = grounded.buildingDetails.historicalSummary;
+      buildingBase.futurePlansStatus = grounded.buildingDetails.futurePlansStatus;
+      buildingBase.futurePlansSummary = grounded.buildingDetails.futurePlansSummary;
+    }
     groundingSources = grounded.sources;
   }
 

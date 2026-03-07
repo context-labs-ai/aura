@@ -49,6 +49,14 @@ describe('enrichment grounding context', () => {
       text: 'Popular with commuters and tourists.',
       sources: [],
       searchQueries: [],
+      buildingDetails: {
+        currentSummary: 'Popular with commuters and tourists.',
+        isLandmark: false,
+        landmarkReason: '',
+        historicalSummary: '',
+        futurePlansStatus: 'none_found',
+        futurePlansSummary: '',
+      },
     });
     searchNearbyPlacesMock.mockResolvedValue([]);
     getPlaceDetailsMock.mockResolvedValue(null);
@@ -133,5 +141,46 @@ describe('enrichment grounding context', () => {
         confidence: 0.87,
       },
     });
+  });
+
+  it('maps landmark history and future plans into building data', async () => {
+    analyzeFrameMock.mockResolvedValue({
+      mode: 'building',
+      title: 'Ferry Building',
+      subtitle: 'Historic Landmark',
+      panels: [],
+      confidence: 0.95,
+      timestamp: 333,
+    });
+    enrichWithGroundingMock.mockResolvedValue({
+      text: 'Historic waterfront landmark with heavy visitor traffic.',
+      sources: [],
+      searchQueries: [],
+      buildingDetails: {
+        currentSummary: 'Historic waterfront landmark with heavy visitor traffic.',
+        isLandmark: true,
+        landmarkReason: 'Recognized waterfront landmark.',
+        historicalSummary: 'The site has served as a major ferry gateway since the late 1800s.',
+        futurePlansStatus: 'proposed',
+        futurePlansSummary: 'Public upgrades have been proposed for the waterfront facade.',
+      },
+    });
+
+    const { enrichBuildingData } = await import('@/modes/building/enrichment');
+
+    const result = await enrichBuildingData('frame-bytes', 37.7936, -122.3958);
+
+    expect(result.data.neighborhoodSummary).toBe(
+      'Historic waterfront landmark with heavy visitor traffic.'
+    );
+    expect(result.data.isLandmark).toBe(true);
+    expect(result.data.landmarkReason).toBe('Recognized waterfront landmark.');
+    expect(result.data.historicalSummary).toBe(
+      'The site has served as a major ferry gateway since the late 1800s.'
+    );
+    expect(result.data.futurePlansStatus).toBe('proposed');
+    expect(result.data.futurePlansSummary).toBe(
+      'Public upgrades have been proposed for the waterfront facade.'
+    );
   });
 });

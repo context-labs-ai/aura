@@ -79,5 +79,61 @@ describe('enrichWithGrounding', () => {
     expect(request.contents).toContain('America/Los_Angeles');
     expect(request.contents).toContain('en-US');
     expect(request.contents).toContain('Coffee Shop');
+    expect(request.contents).toContain('historicalSummary');
+    expect(request.contents).toContain('futurePlansStatus');
+    expect(request.contents).toContain('futurePlansSummary');
+    expect(request.contents).toContain('Prefer site or building history over brand history');
+    expect(request.contents).toContain('Prefer omission over speculation');
+  });
+
+  it('requests structured json for building grounding and parses it', async () => {
+    generateContentMock.mockResolvedValue({
+      text: JSON.stringify({
+        currentSummary: 'Historic waterfront landmark with heavy tourist traffic.',
+        isLandmark: true,
+        landmarkReason: 'Widely recognized civic landmark.',
+        historicalSummary: 'The site has served as a major ferry terminal since the late 19th century.',
+        futurePlansStatus: 'confirmed',
+        futurePlansSummary: 'Public restoration work is planned for the west facade.',
+      }),
+      candidates: [
+        {
+          groundingMetadata: {
+            groundingChunks: [],
+            webSearchQueries: ['Ferry Building restoration plans'],
+          },
+        },
+      ],
+    });
+
+    const { enrichWithGrounding } = await import('@/lib/gemini');
+
+    const result = await enrichWithGrounding({
+      query: 'San Francisco Ferry Building',
+      mode: 'building',
+      user: {
+        localTime: '2026-03-07T23:45:00.000Z',
+        timezone: 'America/Los_Angeles',
+        language: 'en-US',
+      },
+      visualContext: {
+        title: 'Ferry Building',
+        subtitle: 'Historic Waterfront Landmark',
+        confidence: 0.94,
+      },
+    } as never);
+
+    const request = generateContentMock.mock.calls[0][0];
+
+    expect(request.config.responseMimeType).toBe('application/json');
+    expect(result.text).toBe('Historic waterfront landmark with heavy tourist traffic.');
+    expect(result.buildingDetails).toEqual({
+      currentSummary: 'Historic waterfront landmark with heavy tourist traffic.',
+      isLandmark: true,
+      landmarkReason: 'Widely recognized civic landmark.',
+      historicalSummary: 'The site has served as a major ferry terminal since the late 19th century.',
+      futurePlansStatus: 'confirmed',
+      futurePlansSummary: 'Public restoration work is planned for the west facade.',
+    });
   });
 });
