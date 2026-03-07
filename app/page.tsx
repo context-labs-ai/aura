@@ -561,9 +561,9 @@ export default function Home() {
           <div className="rb-landing__content">
             <p className="rb-kicker">Augmented Urban Reality Architecture</p>
             <h1>AURA reads the city in real time.</h1>
-            <p>
-              Point the camera at a building and surface business, neighborhood, and opportunity signals in one scan.
-              See why this building matters, what happened here, and what to notice nearby.
+            <p className="rb-landing-copy">
+              <span>Point at a building to reveal business, neighborhood, and opportunity signals.</span>
+              <span>See why it matters in a single scan.</span>
             </p>
             <button className="rb-primary-button" onClick={startScan}>Start Scan</button>
           </div>
@@ -711,6 +711,8 @@ export default function Home() {
     </main>
   );
 }
+
+
 
 
 
