@@ -306,6 +306,12 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  pointer-events: auto;
+  max-height: 55vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 3%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 3%);
 }
 
 .hud-data-stack {
