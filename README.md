@@ -1,4 +1,4 @@
-# Reality Browser
+# AURA - Augmented Universal Recognition Assistant
 
 **A camera-first PWA that overlays contextual AI intelligence on a live camera feed with a sci-fi HUD aesthetic. Point your phone at any building or product and get instant, grounded insights — enriched with real-time web data, Places API details, 3D model generation, and voice conversation.**
 
@@ -8,7 +8,7 @@ Built for the **Google Gemini API Developer Competition 2026**.
 
 ## What It Does
 
-Reality Browser turns your phone camera into an AI-powered lens. It identifies what you're looking at, enriches it with real-time data from multiple Google APIs, and presents everything in a futuristic heads-up display — all running client-side with zero backend.
+AURA turns your phone camera into an AI-powered lens. It identifies what you're looking at, enriches it with real-time data from multiple Google APIs, and presents everything in a futuristic heads-up display — all running client-side with zero backend.
 
 ### Building X-Ray Mode
 
@@ -218,12 +218,6 @@ types/
   grounding.ts            — GroundingContext, BuildingGroundingResult, TrustLevel
   modes.ts                — AnalysisMode, ModeConfig, system prompts
 ```
-
----
-
-## Demo Mode
-
-Tap **DEMO** in the bottom-left corner for an offline demo with hardcoded data and Web Speech API narration. No API keys required.
 
 ---
 
