@@ -12,25 +12,26 @@ export const MODE_CONFIGS: Record<AnalysisMode, ModeConfig> = {
   building: {
     mode: 'building',
     label: 'Building X-Ray',
-    icon: '🏢',
+    icon: '\u{1F3E2}',
     color: '#00f0ff',
-    systemPrompt: `Identify the building or business shown in this camera photo.
+    systemPrompt: `Identify the building, landmark, or structure shown in this camera photo.
 
 INSTRUCTIONS:
-1. Look for visible text: signs, logos, awnings, window text, door labels. Read them EXACTLY.
-2. If you can read a business name, use it as the title. If not, describe what type of building it is (e.g. "Restaurant", "Office Building", "Residential Apartment").
-3. Look for visual cues: storefront type, architectural style, visible products/menus, lighting, signage color scheme.
-4. Estimate the business category from visual evidence (e.g. "Coffee Shop", "Hardware Store", "Bank").
-5. Set confidence HIGH (0.8-1.0) only if you can read the business name. Set MEDIUM (0.5-0.7) if you can identify the type. Set LOW (0.1-0.4) if unsure.
-6. For rating, ONLY estimate if you see review stickers, stars, or quality indicators. Otherwise omit.
-7. For panels, include 2-4 facts you can ACTUALLY observe (not guesses).
+1. This mode handles buildings, landmarks, monuments, statues, fountains, bridges, towers, and any notable outdoor structure.
+2. Look for visible text: signs, logos, awnings, window text, door labels. Read them EXACTLY.
+3. If you can read a business/landmark name, use it as the title. If it is a well-known landmark (e.g. Merlion, Eiffel Tower, Statue of Liberty, Marina Bay Sands), use its proper name.
+4. If you cannot read a name but recognize the landmark/building, use its known name.
+5. Look for visual cues: architectural style, materials, surrounding context, water features, statues.
+6. Set confidence HIGH (0.8-1.0) if you can identify the landmark/business by name. MEDIUM (0.5-0.7) if you can identify the type. LOW (0.1-0.4) if unsure.
+7. For rating, ONLY include if it is a rated business. Landmarks/monuments do not need ratings.
+8. For panels, include 2-4 facts you can ACTUALLY observe (not guesses).
 
-CRITICAL: Identify what is ACTUALLY in the photo. Do NOT hallucinate or guess names you cannot read. If you see a generic storefront with no readable text, say "Unidentified Storefront" — do not invent a name.`,
+CRITICAL: Identify what is ACTUALLY in the photo. Do NOT hallucinate. If you see a statue or monument, identify it as such. If you cannot identify it, say "Unidentified Structure".`,
   },
   product: {
     mode: 'product',
     label: 'Product Decompiler',
-    icon: '📦',
+    icon: '\u{1F4E6}',
     color: '#00ff88',
     systemPrompt: `Identify the product or object shown in this camera photo.
 
@@ -43,20 +44,26 @@ INSTRUCTIONS:
 6. Set confidence HIGH (0.8-1.0) if you can read the product name. MEDIUM (0.5-0.7) if you recognize the category. LOW (0.1-0.4) if unclear.
 7. For panels, include 2-4 observable facts about the product.
 
-CRITICAL: Describe what you ACTUALLY see. A keyboard is a keyboard, not "a container with light". A mouse is a mouse. Be literal and accurate. Do NOT hallucinate brands you cannot read.`,
+CRITICAL: Describe what you ACTUALLY see. Do NOT hallucinate brands you cannot read. If the image shows a statue, monument, or building, say "Not a product" with low confidence.`,
   },
   unknown: {
     mode: 'unknown',
     label: 'Auto Detect',
-    icon: '🔍',
+    icon: '\u{1F50D}',
     color: '#00f0ff',
     systemPrompt: `Look at this camera photo and classify what the main subject is.
 
 INSTRUCTIONS:
-1. If the photo shows a building exterior, storefront, or architectural structure → mode: "building"
-2. If the photo shows a product, object, device, food item, or consumer good → mode: "product"
-3. If unclear or shows neither (e.g. sky, empty room, abstract) → mode: "unknown"
+1. If the photo shows ANY of these, classify as "building":
+   - A building exterior, storefront, or architectural structure
+   - A landmark, monument, statue, fountain, bridge, tower, or public art installation
+   - A scenic/urban location, park structure, or notable public space
+   - Any large outdoor structure that has a name, history, or location significance
+2. If the photo shows a consumer product, device, food item, packaged good, or hand-held object -> mode: "product"
+3. If unclear or shows neither (e.g. sky, empty room, abstract scene) -> mode: "unknown"
 4. Base your decision on the DOMINANT subject in the center of the frame.
-5. Set confidence based on how clearly you can identify the subject.`,
+5. IMPORTANT: Statues, monuments, and landmarks are ALWAYS "building" - never "product".
+6. Set confidence based on how clearly you can identify the subject.
+7. When in doubt between building and product, prefer "building".`,
   },
 };

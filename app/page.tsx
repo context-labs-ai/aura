@@ -22,7 +22,7 @@ import Building3DOverlay from '@/components/HUD/Building3DOverlay';
 const ANALYSIS_COOLDOWN_MS = 2_000;
 const ENRICHMENT_CACHE_MAX = 20;
 const ENRICHMENT_CACHE_MIN_CONFIDENCE = 0.55;
-const AUTO_MODE_CONFIDENCE_THRESHOLD = 0.4;
+const AUTO_MODE_CONFIDENCE_THRESHOLD = 0.6;
 
 function normalizeCachePart(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -105,10 +105,17 @@ export default function Home() {
         if (requestIdRef.current !== thisRequestId) return;
         if (
           classification.confidence >= AUTO_MODE_CONFIDENCE_THRESHOLD &&
-          (classification.mode === 'building' || classification.mode === 'product')
+          classification.mode === 'building'
         ) {
-          effectiveMode = classification.mode;
+          effectiveMode = 'building';
+        } else if (
+          classification.confidence >= 0.7 &&
+          classification.mode === 'product'
+        ) {
+          // Product mode requires HIGHER confidence to avoid misclassifying landmarks
+          effectiveMode = 'product';
         }
+        // Default stays 'building' — safer for landmarks, monuments, statues
         updateFromAnalysis(classification);
       }
 
@@ -286,12 +293,15 @@ export default function Home() {
 
       // Run 3D generation and building details in parallel
       const [glbUrl, details] = await Promise.all([
-        isMBS ? Promise.resolve('/models/mbs.glb') : generate3DModel(frame),
-        fetchBuildingDetails(buildingName),
+        isMBS ? Promise.resolve('/models/mbs.glb') : generate3DModel(frame).catch(() => null),
+        fetchBuildingDetails(buildingName).catch(() => null),
       ]);
 
       if (glbUrl) {
         setModel3DUrl(glbUrl);
+      } else {
+        // Fallback: use generic building model so overlay still opens
+        setModel3DUrl('/models/mbs.glb');
       }
       if (details) {
         setBuildingDetails(details);
