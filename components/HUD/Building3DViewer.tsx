@@ -218,7 +218,46 @@ export default function Building3DViewer({
       setLoading(false);
     }
 
-    if (glbUrl === 'procedural') {
+    if (glbUrl === 'loading') {
+      // --- Loading state: show rotating grid + scanning pulse ---
+      const gridHelper = new THREE.GridHelper(6, 20, 0x00f0ff, 0x003344);
+      (gridHelper.material as THREE.Material).opacity = 0.4;
+      (gridHelper.material as THREE.Material).transparent = true;
+      scene.add(gridHelper);
+
+      // Pulsing ring to indicate scanning
+      const ringGeo = new THREE.RingGeometry(1.8, 2.0, 64);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x00f0ff,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.01;
+      scene.add(ring);
+      disposablesRef.current.push(ringGeo, ringMat);
+
+      camera.position.set(5, 4, 5);
+      camera.lookAt(0, 0, 0);
+      controls.target.set(0, 0, 0);
+      controls.update();
+
+      // Pulse animation
+      let pulseTime = 0;
+      function animateLoading() {
+        frameIdRef.current = requestAnimationFrame(animateLoading);
+        pulseTime += 0.02;
+        ring.scale.setScalar(1 + 0.15 * Math.sin(pulseTime * 2));
+        ringMat.opacity = 0.2 + 0.15 * Math.sin(pulseTime * 2);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      setLoading(false);
+      animateLoading();
+      return;
+    } else if (glbUrl === 'procedural') {
       // --- Procedural wireframe (instant) ---
       const wireframeGroup = createProceduralWireframe(floors, disposablesRef.current);
       setupWireframeGroup(wireframeGroup);
@@ -255,9 +294,8 @@ export default function Building3DViewer({
         undefined,
         (err) => {
           console.error('[Building3DViewer] Load error:', err);
-          // Fallback to procedural on GLB load failure
-          const wireframeGroup = createProceduralWireframe(floors, disposablesRef.current);
-          setupWireframeGroup(wireframeGroup);
+          setError('Failed to load 3D model');
+          setLoading(false);
         }
       );
     }

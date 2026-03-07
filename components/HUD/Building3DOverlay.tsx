@@ -261,7 +261,7 @@ export default function Building3DOverlay({
             }}
           >
             <span className="hud-spin" style={{ display: 'inline-block', marginRight: 8 }}>◐</span>
-            FETCHING BUILDING DATA...
+            {glbUrl === 'loading' ? 'GENERATING 3D MODEL...' : 'FETCHING BUILDING DATA...'}
           </span>
         </div>
       )}

@@ -125,6 +125,41 @@ export function buildBuildingShellModel(
         title: 'Current Summary',
         body: currentSummary,
       },
+      ...(data.rating !== undefined || data.openNow !== undefined || data.hours
+        ? [{
+            id: 'ratings-info' as const,
+            title: 'Ratings & Hours',
+            items: [
+              ...(data.rating !== undefined ? [`Rating: ${data.rating} / 5`] : []),
+              ...(data.reviewSummary ? [`Reviews: ${data.reviewSummary}`] : []),
+              ...(data.openNow !== undefined ? [`Status: ${data.openNow ? 'Open Now' : 'Closed'}`] : []),
+              ...(data.hours ? [`Hours: ${data.hours}`] : []),
+              ...(data.footTrafficHypothesis ? [`Foot Traffic: ${data.footTrafficHypothesis}`] : []),
+            ],
+          }]
+        : []),
+      ...(data.buildingDetails
+        ? [{
+            id: 'building-details' as const,
+            title: 'Building Details',
+            items: [
+              ...(data.buildingDetails.yearBuilt ? [`Year Built: ${data.buildingDetails.yearBuilt}`] : []),
+              ...(data.buildingDetails.architect ? [`Architect: ${data.buildingDetails.architect}`] : []),
+              ...(data.buildingDetails.height ? [`Height: ${data.buildingDetails.height}`] : []),
+              ...(data.buildingDetails.floors ? [`Floors: ${data.buildingDetails.floors}`] : []),
+              ...(data.buildingDetails.architecturalStyle ? [`Style: ${data.buildingDetails.architecturalStyle}`] : []),
+              ...(data.buildingDetails.historicalSignificance ? [`Significance: ${data.buildingDetails.historicalSignificance}`] : []),
+              ...(data.buildingDetails.notableFacts?.length ? data.buildingDetails.notableFacts.map(f => `• ${f}`) : []),
+            ],
+          }]
+        : []),
+      ...(data.isLandmark
+        ? [{
+            id: 'landmark' as const,
+            title: 'Landmark',
+            body: data.landmarkReason || 'This location is a recognized landmark.',
+          }]
+        : []),
       {
         id: 'time-lens',
         title: 'Time Lens',
@@ -181,8 +216,16 @@ export function buildProductShellModel(
           `Sustainability score: ${
             data.sustainabilityScore !== undefined ? `${data.sustainabilityScore}/10` : 'Unknown'
           }`,
+          ...(data.marginGuess ? [`Margin estimate: ${data.marginGuess}`] : []),
         ],
       },
+      ...(data.supplyChainOrigin
+        ? [{
+            id: 'supply-chain' as const,
+            title: 'Supply Chain',
+            body: data.supplyChainOrigin,
+          }]
+        : []),
       {
         id: 'alternatives',
         title: 'Alternatives',

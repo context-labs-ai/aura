@@ -306,10 +306,10 @@ export default function Home() {
     const buildingName = displayData?.title;
     if (!frame || !buildingName) return;
 
-    setIsScanning3D(true);
-    setModel3DUrl("procedural");
+    // 1. Immediately show overlay with loading/scanning animation
+    setModel3DUrl('loading');
     setBuildingDetails(null);
-    setIsScanning3D(false);
+    setIsScanning3D(true);
 
     fetchBuildingDetails(buildingName)
       .then((details) => {
@@ -321,21 +321,27 @@ export default function Home() {
         // Non-critical background detail fetch.
       });
 
-    const isMBS = buildingName.toLowerCase().includes("marina bay sands");
-    if (isMBS) {
-      setModel3DUrl("/models/mbs.glb");
-      return;
-    }
+    // 3. Check for pre-baked models, otherwise generate via fal.ai
+    const nameLower = buildingName.toLowerCase();
+    const isMBS = nameLower.includes('marina bay sands');
+    const isMerlion = nameLower.includes('merlion') || nameLower.includes('mer lion');
 
-    generate3DModel(frame)
-      .then((url) => {
-        if (url) {
-          setModel3DUrl(url);
-        }
-      })
-      .catch(() => {
-        // Keep the procedural fallback if generation fails.
-      });
+    // Pre-baked models load instantly; everything else goes to fal.ai (~2 min)
+    if (isMBS || isMerlion) {
+      setModel3DUrl(isMBS ? '/models/mbs.glb' : '/models/merlion.glb');
+      console.log('[3d-scan] Using pre-baked model for:', buildingName);
+      setIsScanning3D(false);
+    } else {
+      console.log('[3d-scan] No pre-baked model for:', buildingName, '- generating via fal.ai');
+      generate3DModel(frame)
+        .then((url) => {
+          setModel3DUrl(url || null);
+        })
+        .catch(() => {
+          setModel3DUrl(null);
+        })
+        .finally(() => { setIsScanning3D(false); });
+    }
   }, [displayData?.title]);
 
   const shellViewState =
@@ -349,9 +355,9 @@ export default function Home() {
 
   const detailModel =
     displayData?.mode === "building"
-      ? buildBuildingShellModel(displayData as BuildingData)
+      ? buildBuildingShellModel(displayData as BuildingData, { canScan3D: true, canAskAI: true })
       : displayData?.mode === "product"
-        ? buildProductShellModel(displayData as ProductData)
+        ? buildProductShellModel(displayData as ProductData, { canDecompose: true, canAskAI: true })
         : null;
 
   return (
@@ -425,8 +431,6 @@ export default function Home() {
           <LandingHero
             onStart={() => {
               setShellStarted(true);
-              lastCallRef.current = 0;
-              void runAnalysis();
             }}
           />
         ) : (
@@ -581,18 +585,23 @@ export default function Home() {
             right: 16,
             bottom: 88,
             zIndex: 30,
-            padding: "10px 14px",
+            padding: "12px 20px",
             borderRadius: 999,
-            border: "1px solid rgba(246,83,20,0.24)",
-            background: "rgba(24, 10, 10, 0.72)",
+            border: "1px solid rgba(246,83,20,0.5)",
+            background: "linear-gradient(135deg, rgba(246,83,20,0.3), rgba(24,10,10,0.85))",
             color: "#fff3ed",
             fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
-            fontSize: "0.65rem",
+            fontSize: "0.75rem",
+            fontWeight: 600,
+            letterSpacing: "0.06em",
             pointerEvents: "auto",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            boxShadow: "0 2px 16px rgba(246,83,20,0.25)",
           }}
           disabled={isScanning3D}
         >
-          {isScanning3D ? "Scanning 3D..." : "3D Scan"}
+          {isScanning3D ? "Generating 3D..." : "\uD83C\uDFDB\uFE0F 3D View"}
         </button>
       ) : null}
     </>
