@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BuildingData } from '@/types/overlay';
 
 const analyzeFrameMock = vi.fn();
 const enrichWithGroundingMock = vi.fn();
@@ -56,6 +57,8 @@ describe('enrichment grounding context', () => {
         historicalSummary: '',
         futurePlansStatus: 'none_found',
         futurePlansSummary: '',
+        trustLevel: 'low',
+        trustReason: 'No reliable grounded output returned.',
       },
     });
     searchNearbyPlacesMock.mockResolvedValue([]);
@@ -101,6 +104,27 @@ describe('enrichment grounding context', () => {
     });
   });
 
+  it('supports trust fields on building data', () => {
+    const building: BuildingData = {
+      mode: 'building',
+      title: 'Ferry Building',
+      subtitle: 'Historic Landmark',
+      panels: [],
+      confidence: 0.95,
+      timestamp: 333,
+      isLandmark: true,
+      landmarkReason: 'Recognized waterfront landmark.',
+      historicalSummary: 'The site has served as a major ferry gateway since the late 1800s.',
+      futurePlansStatus: 'proposed',
+      futurePlansSummary: 'Public upgrades have been proposed for the waterfront facade.',
+      trustLevel: 'medium',
+      trustReason: 'History is well grounded, but future work is still proposal-stage.',
+    };
+
+    expect(building.trustLevel).toBe('medium');
+    expect(building.trustReason).toContain('proposal-stage');
+  });
+
   it('passes user context into product grounding and uses location when available', async () => {
     analyzeFrameMock.mockResolvedValue({
       mode: 'product',
@@ -143,6 +167,49 @@ describe('enrichment grounding context', () => {
     });
   });
 
+  it('preserves product enrichment output shape when grounding succeeds', async () => {
+    analyzeFrameMock.mockResolvedValue({
+      mode: 'product',
+      title: 'Oatly Barista',
+      subtitle: 'Oat Drink',
+      panels: [{ label: 'Composition', value: 'Oats, Water', type: 'text' }],
+      confidence: 0.87,
+      timestamp: 222,
+      composition: ['Oats', 'Water'],
+      sustainabilityScore: 8,
+      priceEstimate: '$4.99',
+    });
+    enrichWithGroundingMock.mockResolvedValue({
+      text: 'Current retail price range is $4-6. Alternatives include Minor Figures and Califia Farms.',
+      sources: [
+        { title: 'Store pricing', url: 'https://example.com/store-pricing' },
+        { title: 'Alt milk roundup', url: 'https://example.com/alt-milk' },
+      ],
+      searchQueries: ['Oatly Barista oat drink price'],
+    });
+
+    const { enrichProductData } = await import('@/modes/product/enrichment');
+
+    const result = await enrichProductData('frame-bytes', 1.3521, 103.8198);
+
+    expect(result.panels).toEqual([
+      { label: 'Composition', value: 'Oats, Water', type: 'text' },
+      {
+        label: 'Market Intelligence',
+        value: 'Current retail price range is $4-6. Alternatives include Minor Figures and Califia Farms.',
+        type: 'text',
+      },
+      {
+        label: 'Sources',
+        value: 'Store pricing · Alt milk roundup',
+        type: 'text',
+      },
+    ]);
+    expect(result.subtitle).toBe(
+      'Looking at Oatly Barista. Made of Oats, Water. Sustainability: 8/10. Price estimate: $4.99.'
+    );
+  });
+
   it('maps landmark history and future plans into building data', async () => {
     analyzeFrameMock.mockResolvedValue({
       mode: 'building',
@@ -163,6 +230,8 @@ describe('enrichment grounding context', () => {
         historicalSummary: 'The site has served as a major ferry gateway since the late 1800s.',
         futurePlansStatus: 'proposed',
         futurePlansSummary: 'Public upgrades have been proposed for the waterfront facade.',
+        trustLevel: 'high',
+        trustReason: 'Identity is specific and backed by place-specific public sources.',
       },
     });
 
@@ -181,6 +250,10 @@ describe('enrichment grounding context', () => {
     expect(result.data.futurePlansStatus).toBe('proposed');
     expect(result.data.futurePlansSummary).toBe(
       'Public upgrades have been proposed for the waterfront facade.'
+    );
+    expect(result.data.trustLevel).toBe('high');
+    expect(result.data.trustReason).toBe(
+      'Identity is specific and backed by place-specific public sources.'
     );
   });
 });

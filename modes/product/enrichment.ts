@@ -92,6 +92,8 @@ export async function enrichProductData(
     ],
   };
 
+  enriched.subtitle = buildProductVoiceSummary(enriched);
+
   return enriched;
 }
 

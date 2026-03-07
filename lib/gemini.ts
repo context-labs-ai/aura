@@ -134,7 +134,47 @@ const EMPTY_BUILDING_GROUNDING_RESULT: BuildingGroundingResult = {
   historicalSummary: '',
   futurePlansStatus: 'none_found',
   futurePlansSummary: '',
+  trustLevel: 'low',
+  trustReason: 'No reliable grounded output returned.',
 };
+
+const FUTURE_PLANS_STATUSES = ['confirmed', 'proposed', 'rumored', 'none_found'] as const;
+const TRUST_LEVELS = ['high', 'medium', 'low'] as const;
+const UNCLEAR_BUILDING_IDENTITY_PATTERN =
+  /identity is unclear|(?:building|site) identity is unclear|unable to (?:confidently )?identify(?: the exact)? (?:building|site)|cannot determine the exact (?:building|site)|unable to determine the exact (?:building|site)|exact (?:building|site) identity is unclear/i;
+
+function normalizeFuturePlansStatus(value: unknown): BuildingGroundingResult['futurePlansStatus'] {
+  return FUTURE_PLANS_STATUSES.includes(value as (typeof FUTURE_PLANS_STATUSES)[number])
+    ? (value as BuildingGroundingResult['futurePlansStatus'])
+    : 'none_found';
+}
+
+function normalizeTrustLevel(value: unknown): BuildingGroundingResult['trustLevel'] {
+  return TRUST_LEVELS.includes(value as (typeof TRUST_LEVELS)[number])
+    ? (value as BuildingGroundingResult['trustLevel'])
+    : 'low';
+}
+
+function withLowTrustBuildingFallback(trustReason?: string): BuildingGroundingResult {
+  return {
+    ...EMPTY_BUILDING_GROUNDING_RESULT,
+    trustReason: trustReason?.trim() || EMPTY_BUILDING_GROUNDING_RESULT.trustReason,
+  };
+}
+
+function shouldUseLowTrustBuildingFallback(
+  result: BuildingGroundingResult
+): boolean {
+  const identitySignalText = [
+    result.currentSummary,
+    result.landmarkReason,
+    result.trustReason,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return UNCLEAR_BUILDING_IDENTITY_PATTERN.test(identitySignalText);
+}
 
 function buildLocationPrompt(context: GroundingContext): string {
   if (!context.location) {
@@ -166,6 +206,8 @@ function buildBuildingOutputContract(): string {
     historicalSummary: '',
     futurePlansStatus: 'none_found',
     futurePlansSummary: '',
+    trustLevel: 'medium',
+    trustReason: 'Identity is reasonably specific and grounded by place-specific sources.',
   };
 
   return [
@@ -177,6 +219,11 @@ function buildBuildingOutputContract(): string {
     'If the identity is unclear, historicalSummary must be empty and futurePlansStatus must be "none_found".',
     'futurePlansStatus must be one of: confirmed, proposed, rumored, none_found.',
     'futurePlansSummary should only include place-specific public plans, renovations, redevelopment, or use changes.',
+    'Assign trustLevel as high, medium, or low.',
+    'Set trustReason to explain why the grounded evidence deserves that trust level.',
+    'Use high trust only when identity and claims are strongly corroborated by place-specific public sources.',
+    'Use medium trust when identity is mostly clear but some claims are only partially corroborated.',
+    'Use low trust when the identity is incomplete, the future planning evidence is weak, or the grounded facts are tentative.',
     'Do not treat brand expansion, company growth, or generic city trends as site-specific future plans.',
     'Prefer omission over speculation.',
   ].join(' ');
@@ -213,14 +260,20 @@ function parseBuildingGroundingResult(text: string | undefined): BuildingGroundi
 
   try {
     const parsed = JSON.parse(text);
-    return {
+    const result: BuildingGroundingResult = {
       currentSummary: parsed.currentSummary ?? '',
       isLandmark: parsed.isLandmark ?? false,
       landmarkReason: parsed.landmarkReason ?? '',
       historicalSummary: parsed.historicalSummary ?? '',
-      futurePlansStatus: parsed.futurePlansStatus ?? 'none_found',
+      futurePlansStatus: normalizeFuturePlansStatus(parsed.futurePlansStatus),
       futurePlansSummary: parsed.futurePlansSummary ?? '',
+      trustLevel: normalizeTrustLevel(parsed.trustLevel),
+      trustReason: parsed.trustReason ?? 'No reliable grounded output returned.',
     };
+
+    return shouldUseLowTrustBuildingFallback(result)
+      ? withLowTrustBuildingFallback(result.trustReason)
+      : result;
   } catch {
     return EMPTY_BUILDING_GROUNDING_RESULT;
   }

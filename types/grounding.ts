@@ -31,6 +31,7 @@ export interface GroundingContext {
 }
 
 export type FuturePlansStatus = 'confirmed' | 'proposed' | 'rumored' | 'none_found';
+export type TrustLevel = 'high' | 'medium' | 'low';
 
 export interface BuildingGroundingResult {
   currentSummary: string;
@@ -39,4 +40,6 @@ export interface BuildingGroundingResult {
   historicalSummary: string;
   futurePlansStatus: FuturePlansStatus;
   futurePlansSummary: string;
+  trustLevel: TrustLevel;
+  trustReason: string;
 }
