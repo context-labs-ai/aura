@@ -11,7 +11,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0a0a0a",
+  themeColor: "#05060a",
 };
 
 export default function RootLayout({
@@ -22,17 +22,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          rel="preconnect"
-          href="https://fonts.googleapis.com"
-        />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=IBM+Plex+Mono:wght@400;500;700&display=swap"
           rel="stylesheet"
         />
       </head>
@@ -40,10 +33,9 @@ export default function RootLayout({
         style={{
           margin: 0,
           padding: 0,
-          backgroundColor: "#0a0a0a",
+          backgroundColor: "#05060a",
           color: "#ffffff",
-          fontFamily:
-            '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          fontFamily: "'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
           minHeight: "100vh",
           overflow: "hidden",
         }}
@@ -53,3 +45,4 @@ export default function RootLayout({
     </html>
   );
 }
+

@@ -5,84 +5,44 @@ import { useCamera } from "@/hooks/useCamera";
 
 export interface CameraFeedHandle {
   captureFrame: () => string | null;
+  flipCamera: () => void;
 }
 
-const CameraFeed = forwardRef<CameraFeedHandle>(function CameraFeed(_, ref) {
-  const { videoRef, status, errorMessage, captureFrame } = useCamera();
+interface CameraFeedProps {
+  className?: string;
+}
 
-  useImperativeHandle(ref, () => ({ captureFrame }), [captureFrame]);
+const CameraFeed = forwardRef<CameraFeedHandle, CameraFeedProps>(function CameraFeed(
+  { className },
+  ref,
+) {
+  const { videoRef, status, errorMessage, captureFrame, toggleFacingMode } = useCamera();
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      captureFrame,
+      flipCamera: toggleFacingMode,
+    }),
+    [captureFrame, toggleFacingMode],
+  );
 
   if (status === "permission-denied" || status === "no-camera" || status === "error") {
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0a0a0a",
-          color: "#ffffff",
-          padding: "2rem",
-          textAlign: "center",
-        }}
-      >
-        <div
-          style={{
-            fontSize: "3rem",
-            marginBottom: "1rem",
-          }}
-        >
-          {status === "permission-denied" ? "🔒" : status === "no-camera" ? "📷" : "⚠️"}
-        </div>
-        <h2
-          style={{
-            fontSize: "1.25rem",
-            fontWeight: 600,
-            marginBottom: "0.75rem",
-            margin: 0,
-          }}
-        >
+      <div className={`rb-camera-fallback ${className ?? ""}`.trim()} role="status" aria-live="polite">
+        <h3 className="rb-camera-fallback__title">
           {status === "permission-denied"
             ? "Camera Access Required"
             : status === "no-camera"
               ? "No Camera Found"
               : "Camera Error"}
-        </h2>
-        <p
-          style={{
-            fontSize: "0.9rem",
-            color: "#aaaaaa",
-            maxWidth: "320px",
-            lineHeight: 1.5,
-            margin: "0.75rem 0 0 0",
-          }}
-        >
-          {errorMessage}
-        </p>
+        </h3>
+        <p className="rb-camera-fallback__body">{errorMessage}</p>
       </div>
     );
   }
 
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        objectFit: "cover",
-        zIndex: 0,
-      }}
-    />
-  );
+  return <video ref={videoRef} autoPlay playsInline muted className={className} />;
 });
 
 export default CameraFeed;

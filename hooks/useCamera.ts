@@ -9,11 +9,15 @@ export type CameraStatus =
   | "no-camera"
   | "error";
 
+export type CameraFacingMode = "environment" | "user";
+
 export interface UseCameraResult {
   videoRef: React.RefObject<HTMLVideoElement>;
   status: CameraStatus;
   errorMessage: string | null;
   captureFrame: () => string | null;
+  facingMode: CameraFacingMode;
+  toggleFacingMode: () => void;
 }
 
 export function useCamera(): UseCameraResult {
@@ -21,33 +25,40 @@ export function useCamera(): UseCameraResult {
   const streamRef = useRef<MediaStream | null>(null);
   const [status, setStatus] = useState<CameraStatus>("initializing");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<CameraFacingMode>("environment");
 
   useEffect(() => {
     let cancelled = false;
 
     async function initCamera() {
+      setStatus("initializing");
+      setErrorMessage(null);
+
       try {
-        // Try ideal constraints first, fall back to basic if OverconstrainedError
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+
         let stream: MediaStream;
+
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
-              facingMode: "environment",
+              facingMode: { ideal: facingMode },
               width: { ideal: 1920 },
               height: { ideal: 1080 },
             },
             audio: false,
           });
         } catch (constraintErr) {
-          // iOS Safari and some devices reject ideal constraints —
-          // fall back to basic camera request
           if (
             constraintErr instanceof DOMException &&
             (constraintErr.name === "OverconstrainedError" ||
               constraintErr.name === "NotReadableError")
           ) {
             stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: "environment" },
+              video: { facingMode },
               audio: false,
             });
           } else {
@@ -56,7 +67,7 @@ export function useCamera(): UseCameraResult {
         }
 
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
 
@@ -64,12 +75,10 @@ export function useCamera(): UseCameraResult {
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // iOS Safari requires explicit play() — autoPlay attribute alone
-          // is not reliable when srcObject is set programmatically
           try {
             await videoRef.current.play();
           } catch {
-            // play() can reject if user navigates away — safe to ignore
+            // Ignore play() failures caused by navigation/context switches.
           }
         }
 
@@ -83,19 +92,19 @@ export function useCamera(): UseCameraResult {
             case "NotAllowedError":
               setStatus("permission-denied");
               setErrorMessage(
-                "Camera access was denied. Please allow camera permission in your browser settings and reload the page."
+                "Camera access was denied. Allow permission in browser settings and reload."
               );
               break;
             case "NotFoundError":
               setStatus("no-camera");
               setErrorMessage(
-                "No camera found on this device. Please connect a camera and reload."
+                "No camera found on this device. Connect a camera and reload."
               );
               break;
             case "OverconstrainedError":
               setStatus("error");
               setErrorMessage(
-                "Camera does not support the requested resolution. Please try a different device."
+                "Camera does not support the requested resolution. Try another device."
               );
               break;
             default:
@@ -114,11 +123,11 @@ export function useCamera(): UseCameraResult {
     return () => {
       cancelled = true;
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
     };
-  }, []);
+  }, [facingMode]);
 
   const captureFrame = useCallback((): string | null => {
     const video = videoRef.current;
@@ -126,23 +135,25 @@ export function useCamera(): UseCameraResult {
       return null;
     }
 
-    // Downscale to max 640px width for faster Gemini API processing
-    // Full resolution (1920x1080) creates ~300KB+ base64 payloads — too slow
     const MAX_WIDTH = 640;
     const scale = Math.min(1, MAX_WIDTH / video.videoWidth);
-    const w = Math.round(video.videoWidth * scale);
-    const h = Math.round(video.videoHeight * scale);
+    const width = Math.round(video.videoWidth * scale);
+    const height = Math.round(video.videoHeight * scale);
 
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = width;
+    canvas.height = height;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(video, 0, 0, width, height);
     return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
-  return { videoRef, status, errorMessage, captureFrame };
+  const toggleFacingMode = useCallback(() => {
+    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
+  }, []);
+
+  return { videoRef, status, errorMessage, captureFrame, facingMode, toggleFacingMode };
 }
