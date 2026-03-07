@@ -23,6 +23,15 @@ export interface BuildingData extends OverlayData {
   hours?: string;
   footTrafficHypothesis?: string;
   neighborhoodSummary?: string;
+  buildingDetails?: {
+    yearBuilt?: string;
+    architect?: string;
+    height?: string;
+    floors?: number;
+    architecturalStyle?: string;
+    historicalSignificance?: string;
+    notableFacts?: string[];
+  };
 }
 
 export interface ProductData extends OverlayData {

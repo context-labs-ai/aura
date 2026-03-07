@@ -7,9 +7,11 @@ import PulseIndicator from "./PulseIndicator";
 
 interface BuildingOverlayProps {
   data: BuildingData;
+  onScan3D?: () => void;
+  isScanning3D?: boolean;
 }
 
-export default function BuildingOverlay({ data }: BuildingOverlayProps) {
+export default function BuildingOverlay({ data, onScan3D, isScanning3D }: BuildingOverlayProps) {
   const renderStars = (rating: number) => {
     const full = Math.floor(rating);
     const half = rating % 1 >= 0.5;
@@ -102,6 +104,50 @@ export default function BuildingOverlay({ data }: BuildingOverlayProps) {
           <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.7)" }}>
             {data.neighborhoodSummary}
           </span>
+        </DataPanel>
+      )}
+
+      {/* 7 — 3D Scan button */}
+      {onScan3D && (
+        <DataPanel title="3D Analysis" delay={1.05}>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onScan3D();
+            }}
+            disabled={isScanning3D}
+            style={{
+              width: '100%',
+              padding: '10px 16px',
+              background: isScanning3D
+                ? 'rgba(0,240,255,0.05)'
+                : 'rgba(0,240,255,0.1)',
+              border: `1px solid ${isScanning3D ? 'rgba(0,240,255,0.15)' : 'rgba(0,240,255,0.4)'}`,
+              borderRadius: 6,
+              color: isScanning3D ? 'rgba(255,255,255,0.4)' : 'var(--hud-cyan)',
+              fontFamily: "var(--hud-font, 'Share Tech Mono', monospace)",
+              fontSize: '0.7rem',
+              letterSpacing: '0.1em',
+              cursor: isScanning3D ? 'not-allowed' : 'pointer',
+              textTransform: 'uppercase',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {isScanning3D ? (
+              <>
+                <span className="hud-spin" style={{ display: 'inline-block', width: 14, height: 14 }}>◐</span>
+                GENERATING 3D SCAN...
+              </>
+            ) : (
+              <>
+                ◈ 3D SCAN
+              </>
+            )}
+          </button>
         </DataPanel>
       )}
     </div>

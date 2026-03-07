@@ -76,15 +76,83 @@ export async function enrichProductData(
     ],
   };
 
-  // ── Step 4: Generate voice context summary ──────────────────
-  const topMaterials = (enriched.composition ?? []).slice(0, 3).join(', ') || 'unknown materials';
-  const sustainability = enriched.sustainabilityScore != null
-    ? `${enriched.sustainabilityScore}/10`
-    : 'unknown';
-  const price = enriched.priceEstimate ?? 'unknown';
+  return enriched;
+}
 
-  enriched.subtitle =
-    `Looking at ${enriched.title}. Made of ${topMaterials}. Sustainability: ${sustainability}. Price estimate: ${price}.`;
+export function buildProductVoiceSummary(data: ProductData): string {
+  const topMaterials = (data.composition ?? []).slice(0, 3).join(', ') || 'unknown materials';
+  const sustainability = data.sustainabilityScore != null
+    ? `${data.sustainabilityScore}/10`
+    : 'unknown';
+  const price = data.priceEstimate ?? 'unknown';
+
+  return `Looking at ${data.title}. Made of ${topMaterials}. Sustainability: ${sustainability}. Price estimate: ${price}.`;
+}
+
+/**
+ * Fast base product analysis — Gemini structured output only.
+ * Returns immediately displayable ProductData without slow enrichment.
+ */
+export async function getBaseProductAnalysis(
+  frameBase64: string,
+): Promise<ProductData> {
+  const raw = await analyzeFrame(frameBase64, 'product');
+
+  if (raw.confidence < 0.3 || raw.title === 'Analysis Failed') {
+    return { ...NO_PRODUCT_FALLBACK, timestamp: Date.now() };
+  }
+
+  const product = raw as ProductData;
+  return {
+    ...product,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * Slow enrichment from pre-analyzed base data — Search Grounding.
+ * Run asynchronously after base result is already displayed.
+ */
+export async function enrichProductFromBase(
+  baseData: ProductData,
+): Promise<ProductData> {
+  const groundingQuery = [
+    baseData.title,
+    'price',
+    'sustainability',
+    'alternatives',
+  ].join(' ');
+
+  const grounding = await enrichWithGrounding(groundingQuery, 'product');
+
+  const enriched: ProductData = {
+    ...baseData,
+    timestamp: Date.now(),
+    panels: [
+      ...baseData.panels,
+      ...(grounding.text
+        ? [
+            {
+              label: 'Market Intelligence',
+              value: grounding.text.slice(0, 500),
+              type: 'text' as const,
+            },
+          ]
+        : []),
+      ...(grounding.sources.length > 0
+        ? [
+            {
+              label: 'Sources',
+              value: grounding.sources
+                .slice(0, 3)
+                .map((s) => s.title)
+                .join(' · '),
+              type: 'text' as const,
+            },
+          ]
+        : []),
+      ],
+  };
 
   return enriched;
 }
